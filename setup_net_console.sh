@@ -27,19 +27,22 @@ target_dir=/sys/kernel/config/netconsole/t0
 
 if [ ! -d "$target_dir" ]; then
     echo "Making netconsole target directory:" $target_dir
-    mkdir /sys/kernel/config/netconsole/t0
+    mkdir $target_dir
 else
     echo "Target directory already exists:" $target_dir
 fi
 
 echo "Disabling netconsole target"
-echo 0 > $target_dir/enabled
+echo 0 > $target_dir/enabled || true
 
 echo "Configuring local_ip:" $local_ip
 echo $local_ip > $target_dir/local_ip
 
 echo "Configuring remote_ip:" $remote_ip
 echo $remote_ip > $target_dir/remote_ip
+
+echo "Configuring remote_port:" $remote_port
+echo $remote_port > $target_dir/remote_port
 
 echo "Configuring remote_mac:" $remote_mac
 echo $remote_mac > $target_dir/remote_mac
