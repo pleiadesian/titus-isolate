@@ -16,6 +16,7 @@ partition=$2
 monitor_ip=$3
 
 echo "Stack: " $stack
+echo "Partition: " $partition
 echo "Monitor IP: " $monitor_ip
 
 echo "Fetching hosts"
@@ -42,9 +43,7 @@ while read ip; do
     echo "Setting up netconsole on: $ip to push logs to $monitor_ip:$port"
     ssh -n -t root@$ip "/home/nfsuper/setup_net_console.sh $monitor_ip $port"
 
-    echo "Incrementing port"
     port=$((port+1))
-    echo "port: $port"
 done <hosts
 
 
