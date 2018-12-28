@@ -55,8 +55,9 @@ def main(admin_port):
 
     # Publish PMC metrics
     log.info("Starting PMC publishing...")
-    pmc_subscriber = AtlasPmcSubscriber()
-    PmcPublisher(PmcProvider(get_bpf(), LinuxContextProvider()), [pmc_subscriber])
+    pmc_subscriber = AtlasPmcSubscriber(cpu)
+    pmc_provider = PmcProvider(get_bpf(), LinuxContextProvider(), cpu)
+    PmcPublisher(pmc_provider, [pmc_subscriber])
 
     # Report metrics
     log.info("Starting metrics reporting...")

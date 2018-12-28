@@ -1,5 +1,6 @@
 import time
 
+from titus_isolate.isolate.utils import get_thread_ids
 from titus_isolate.metrics.titus_pmc import TitusPmc
 from titus_isolate.utils import get_logger
 
@@ -10,10 +11,11 @@ log = get_logger()
 
 
 class PmcProvider:
-    def __init__(self, bpf, context_provider):
+    def __init__(self, bpf, context_provider, cpu):
         self.__bpf = bpf
         self.__tables = [MISS_COUNT_TABLE_NAME, REF_COUNT_TABLE_NAME]
         self.__context_provider = context_provider
+        self.__cpu = cpu
 
     def get_metrics(self, duration):
         metrics = []
@@ -25,11 +27,6 @@ class PmcProvider:
 
         return metrics
 
-    @staticmethod
-    def __log_table(table):
-        for (k, v) in table.items():
-            log.info('{}: {}'.format(k, v))
-
     def __get_table_metrics(self, table, metric_name, timestamp, duration):
         metrics = []
         try:
@@ -39,7 +36,6 @@ class PmcProvider:
                     continue
                 task_id = self.__context_provider.get_task_id(k.pid)
                 job_id = self.__context_provider.get_job_id(k.pid)
-                log.debug("pid: {}, job_id: {}, task_id: {}".format(k.pid, job_id, task_id))
 
                 if task_id is not None:
                     metric = TitusPmc(
@@ -50,8 +46,9 @@ class PmcProvider:
                         pid=k.pid,
                         cpu_id=k.cpu,
                         job_id=job_id,
-                        task_id=task_id)
-                    log.debug("Constructed TitusPMC object for pid: {}, object: {}".format(k.pid, metric))
+                        task_id=task_id,
+                        thread_ids=get_thread_ids(task_id, self.__cpu.get_threads()))
+                    log.info("metric: {}".format(metric))
                     metrics.append(metric)
         except:
             log.exception("Failed to process the metric table: {}".format(metric_name))

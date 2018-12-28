@@ -1,5 +1,6 @@
 import copy
 
+from titus_isolate.isolate.utils import get_thread_ids
 from titus_isolate.metrics.metrics_reporter import MetricsReporter
 from titus_isolate.metrics.pmc_subscriber import PmcSubscriber
 from titus_isolate.utils import get_logger
@@ -29,12 +30,12 @@ class AtlasPmcSubscriber(PmcSubscriber, MetricsReporter):
     def ___get_metric_name(titus_pmc_metric):
         return "titus-isolate.{}".format(titus_pmc_metric.get_name())
 
-    @staticmethod
-    def __update_tags(tags, titus_pmc_metric):
+    def __update_tags(self, tags, titus_pmc_metric):
         tags_copy = copy.deepcopy(tags)
         tags_copy["timestamp"] = str(titus_pmc_metric.get_timestamp())
         tags_copy["duration"] = str(titus_pmc_metric.get_duration())
         tags_copy["cpu_id"] = str(titus_pmc_metric.get_cpu_id())
         tags_copy["job_id"] = str(titus_pmc_metric.get_job_id())
         tags_copy["task_id"] = str(titus_pmc_metric.get_task_id())
+        tags_copy["thread_ids"] = str(titus_pmc_metric.get_thread_ids())
         return tags_copy

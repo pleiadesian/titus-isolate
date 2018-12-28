@@ -1,6 +1,6 @@
 
 class TitusPmc:
-    def __init__(self, timestamp, duration, name, value, pid, cpu_id, job_id, task_id):
+    def __init__(self, timestamp, duration, name, value, pid, cpu_id, job_id, task_id, thread_ids):
         self.__timestamp = timestamp
         self.__duration = duration
         self.__name = name
@@ -9,6 +9,7 @@ class TitusPmc:
         self.__cpu_id = cpu_id
         self.__job_id = job_id
         self.__task_id = task_id
+        self.__thread_ids = thread_ids
 
     def get_timestamp(self):
         return self.__timestamp
@@ -33,6 +34,9 @@ class TitusPmc:
 
     def get_task_id(self):
         return self.__task_id
+
+    def get_thread_ids(self):
+        return self.__thread_ids
 
     def __str__(self):
         return "timestamp: {}, sample_duration: {}, name: {}, value: {}, pid: {}, cpu_id: {}, job_id: {}, task_id: {}" \

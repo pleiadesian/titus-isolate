@@ -11,3 +11,7 @@ def get_static_workloads(workloads):
 
 def get_workloads_by_type(workloads, workload_type):
     return [w for w in workloads if w.get_type() == workload_type]
+
+
+def get_thread_ids(workload_id, threads):
+    return [t.get_id() for t in threads if t.get_workload_id() == workload_id]
