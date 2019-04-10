@@ -1,15 +1,27 @@
-FROM dockerregistry.test.netflix.net:7002/engtools/xenialbase
+FROM ubuntu:16.04
 
 RUN apt update && apt install -y \
     build-essential \
     git \
+    libopenblas-dev \
+    libatlas-dev \
+    libblas-dev \
+    liblapack-dev \
+    libglpk-dev \
     python3-all \
     python3-dev \
     python3-pip \
     python3-setuptools \
-    ssh
+    ssh \
+    vim
 
 RUN pip3 install wheel
+
+RUN git clone https://github.com/cvxopt/cvxopt.git
+WORKDIR cvxopt
+RUN git checkout `git describe --abbrev=0 --tags`
+RUN CFLAGS='-Wall -O0 -g' CVXOPT_BUILD_GLPK=1 python3 setup.py install
+WORKDIR /
 
 COPY prerequirements.txt .
 RUN pip3 install -r prerequirements.txt
@@ -30,4 +42,4 @@ ENV GUROBI_HOME="/opt/gurobi810/linux64"
 ENV PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/gurobi810/linux64/bin"
 ENV LD_LIBRARY_PATH="/opt/gurobi811/linux64/lib"
 
-CMD gunicorn -w $TITUS_NUM_CPU -b $EC2_LOCAL_IPV4:80 --log-level=info titus_isolate.api.solve:app
+CMD gunicorn -w 1 -b $EC2_LOCAL_IPV4:80 --log-level=info titus_isolate.api.solve:app
