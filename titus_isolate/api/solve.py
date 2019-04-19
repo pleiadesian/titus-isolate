@@ -127,9 +127,10 @@ def assign_threads():
     allocator = get_cpu_allocator()
 
     try:
+        headers = request.headers
         body = request.get_json()
         cpu_in, workload_id, workloads, cpu_usage, instance_id = get_threads_arguments(body)
-        log.info("Assigning threads for workload: '{}' from: '{}'".format(workload_id, instance_id))
+        log.info("Assigning threads for workload: '{}' from: '{}' with headers: '{}'".format(workload_id, instance_id, headers))
         cpu_out = allocator.assign_threads(cpu_in, workload_id, workloads, cpu_usage, instance_id)
         global assign_threads_success_count
         assign_threads_success_count += 1
@@ -146,9 +147,10 @@ def free_threads():
     allocator = get_cpu_allocator()
 
     try:
+        headers = request.headers
         body = request.get_json()
         cpu_in, workload_id, workloads, cpu_usage, instance_id = get_threads_arguments(body)
-        log.info("Freeing threads for workload: '{}' from: '{}'".format(workload_id, instance_id))
+        log.info("Freeing threads for workload: '{}' from: '{}' with headers: '{}'".format(workload_id, instance_id, headers))
         cpu_out = allocator.free_threads(cpu_in, workload_id, workloads, cpu_usage, instance_id)
         global free_threads_success_count
         free_threads_success_count += 1
@@ -165,9 +167,10 @@ def rebalance():
     allocator = get_cpu_allocator()
 
     try:
+        headers = request.headers
         body = request.get_json()
         cpu_in, workloads, cpu_usage, instance_id = get_rebalance_arguments(body)
-        log.info("Rebalancing workloads: {}, from: '{}'".format(workloads.keys(), instance_id))
+        log.info("Rebalancing workloads: {}, from: '{}' with headers: '{}'".format(workloads.keys(), instance_id, headers))
         cpu_out = allocator.rebalance(cpu_in, workloads, cpu_usage, instance_id)
         global rebalance_success_count
         rebalance_success_count += 1
