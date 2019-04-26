@@ -1,6 +1,7 @@
 import copy
 from threading import Lock
 import time
+from typing import Dict
 
 from titus_isolate import log
 
@@ -25,6 +26,8 @@ from titus_isolate.metrics.event_log import report_cpu_event
 from titus_isolate.metrics.metrics_reporter import MetricsReporter
 from titus_isolate.model.processor.cpu import Cpu
 from titus_isolate.model.processor.utils import visualize_cpu_comparison
+from titus_isolate.monitor.cpu_usage import WorkloadCpuUsage
+from titus_isolate.monitor.workload_monitor_manager import WorkloadMonitorManager
 from titus_isolate.numa.utils import update_numa_balancing
 from titus_isolate.utils import get_workload_monitor_manager, get_config_manager
 
@@ -147,8 +150,11 @@ class WorkloadManager(MetricsReporter):
             "stack": config_manager.get_stack()
         }
 
-    def __get_cpu_usage(self) -> dict:
-        return self.__wmm.get_cpu_usage(seconds=3600, agg_granularity_secs=60)
+    def __get_wmm(self) -> WorkloadMonitorManager:
+        return self.__wmm
+
+    def __get_cpu_usage(self) -> Dict[str, WorkloadCpuUsage]:
+        return self.__get_wmm().get_cpu_usage(seconds=3600, agg_granularity_secs=60)
 
     def __get_threads_request(self, workload_id, workload_map, request_type):
         return AllocateThreadsRequest(

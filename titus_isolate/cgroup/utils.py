@@ -3,7 +3,7 @@ import time
 from typing import List
 
 from titus_isolate import log
-from titus_isolate.monitor.cpu_usage import CpuUsage
+from titus_isolate.monitor.cpu_usage import RawCpuUsage
 
 ROOT_CGROUP_PATH = "/sys/fs/cgroup"
 TITUS_INITS_PATH = "/var/lib/titus-inits"
@@ -120,7 +120,7 @@ def get_quota(container_name):
         return int(f.readline().strip())
 
 
-def parse_cpuacct_usage_all(text) -> List[CpuUsage]:
+def parse_cpuacct_usage_all(text) -> List[RawCpuUsage]:
     # Text looks like this:
     #
     #     cpu user system
@@ -139,7 +139,7 @@ def parse_cpuacct_usage_all(text) -> List[CpuUsage]:
         if ind == 0:
             continue
         cpu, user, system = row.split()
-        usage_rows.append(CpuUsage(int(cpu), int(user), int(system)))
+        usage_rows.append(RawCpuUsage(int(cpu), int(user), int(system)))
 
     return usage_rows
 

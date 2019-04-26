@@ -3,7 +3,7 @@ import os
 
 from titus_isolate import log
 from titus_isolate.cgroup.utils import parse_cpuacct_usage_all, get_usage_all_path
-from titus_isolate.monitor.cpu_usage import CpuUsageSnapshot
+from titus_isolate.monitor.cpu_usage import RawCpuUsageSnapshot
 
 
 class CgroupMetricsProvider:
@@ -22,14 +22,14 @@ class CgroupMetricsProvider:
 
         if not os.path.isfile(usage_path):
             log.warning("cpu usage path does not exist: {}".format(usage_path))
-            return
+            return None
 
         with open(usage_path, 'r') as f:
             timestamp = datetime.datetime.utcnow()
             content = f.read()
 
         cpu_usage_rows = parse_cpuacct_usage_all(content)
-        return CpuUsageSnapshot(timestamp, cpu_usage_rows)
+        return RawCpuUsageSnapshot(timestamp, cpu_usage_rows)
 
     def __get_usage_path(self):
         if self.__usage_path is not None:

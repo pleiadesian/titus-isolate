@@ -10,7 +10,7 @@ import numpy as np
 from tests.utils import get_test_workload
 from titus_isolate.event.constants import STATIC
 from titus_isolate.monitor.cgroup_metrics_provider import CgroupMetricsProvider
-from titus_isolate.monitor.cpu_usage import CpuUsage, CpuUsageSnapshot
+from titus_isolate.monitor.cpu_usage import RawCpuUsage, RawCpuUsageSnapshot
 from titus_isolate.monitor.workload_monitor_manager import DEFAULT_SAMPLE_FREQUENCY_SEC
 from titus_isolate.monitor.workload_perf_mon import WorkloadPerformanceMonitor
 
@@ -32,8 +32,8 @@ class TestWorkloadPerfMon(unittest.TestCase):
         self.assertEqual(0, len(buffers))
 
         # Mock reporting metrics on a single hardware thread
-        cpu_usage = CpuUsage(pu_id=0, user=100, system=50)
-        snapshot = CpuUsageSnapshot(timestamp=dt.now(), rows=[cpu_usage])
+        cpu_usage = RawCpuUsage(pu_id=0, user=100, system=50)
+        snapshot = RawCpuUsageSnapshot(timestamp=dt.now(), rows=[cpu_usage])
         metrics_provider.get_cpu_usage = MagicMock(return_value=snapshot)
         perf_mon.sample()
 
@@ -51,15 +51,15 @@ class TestWorkloadPerfMon(unittest.TestCase):
         data = WorkloadPerformanceMonitor.normalize_data(
             to_ts(dt(2019, 3, 5, 10, 15, 0)),
             deque(map(to_ts, [dt(2019, 3, 5, 10, 14, 30),
-             dt(2019, 3, 5, 10, 14, 11),
-             dt(2019, 3, 5, 10, 13, 28)])),
+                              dt(2019, 3, 5, 10, 14, 11),
+                              dt(2019, 3, 5, 10, 13, 28)])),
             [deque([100, 200, 200], 100), deque([50, 300, 360], 100)]
-            )
+        )
         self.assertEqual(360-50+200-100, data[-1])
         self.assertEqual(59, np.sum(np.isnan(data).astype(np.int16)))
 
         try:
-            data = WorkloadPerformanceMonitor.normalize_data(
+            WorkloadPerformanceMonitor.normalize_data(
                 to_ts(dt(2019, 3, 5, 10, 15, 0)),
                 deque([]),
                 [deque([]), deque([])])

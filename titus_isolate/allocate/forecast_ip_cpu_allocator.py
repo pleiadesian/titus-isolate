@@ -18,8 +18,7 @@ from titus_isolate.event.constants import BURST, STATIC
 from titus_isolate.metrics.constants import IP_ALLOCATOR_TIMEBOUND_COUNT, FORECAST_REBALANCE_FAILURE_COUNT
 from titus_isolate.metrics.event_log_manager import EventLogManager
 from titus_isolate.model.processor.cpu import Cpu
-from titus_isolate.model.utils import get_burst_workloads, release_all_threads, update_burst_workloads, \
-    get_static_workloads
+from titus_isolate.model.utils import get_burst_workloads, release_all_threads, update_burst_workloads
 from titus_isolate.model.utils import get_sorted_workloads
 from titus_isolate.monitor.empty_free_thread_provider import EmptyFreeThreadProvider
 from titus_isolate.predict.cpu_usage_predictor import PredEnvironment

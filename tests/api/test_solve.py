@@ -9,7 +9,9 @@ import pytest
 
 from titus_isolate.allocate.allocate_response import deserialize_response
 from titus_isolate.allocate.allocate_threads_request import AllocateThreadsRequest
+from titus_isolate.allocate.utils import parse_cpu_usage_history, parse_cpu_usage_snapshot
 from titus_isolate.api.testing import set_testing
+from titus_isolate.monitor.cpu_usage import CpuUsageHistory, CpuUsageSnapshot
 
 set_testing()
 
@@ -63,6 +65,20 @@ class TestStatus(unittest.TestCase):
         log.info("cpu_out: {}".format(cpu_out))
 
         self.assertEqual(cpu_in.to_dict(), cpu_out.to_dict())
+
+    def test_parse_cpu_usage(self):
+        hist_values = [float("nan"), 1, 2, 3, 4, 5]
+        hist_in = CpuUsageHistory(60, 10, hist_values)
+        hist_out = parse_cpu_usage_history(hist_in.to_dict())
+        self.assertEqual(hist_in.duration_sec, hist_out.duration_sec)
+        self.assertEqual(hist_in.granularity_sec, hist_out.granularity_sec)
+        self.assertEqual(hist_in.values, hist_out.values)
+
+        snap_values = [float("nan"), 1, 2, 3, 4, 5]
+        snapshot_in = CpuUsageSnapshot(10, snap_values)
+        snapshot_out = parse_cpu_usage_snapshot(snapshot_in.to_dict())
+        self.assertEqual(snapshot_in.sample_sec, snapshot_out.sample_sec)
+        self.assertEqual(snapshot_in.values, snapshot_out.values)
 
     def test_allocator_failure(self):
         set_cpu_allocator(CrashingAllocator())

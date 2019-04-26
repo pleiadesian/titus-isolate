@@ -5,6 +5,8 @@ WORKLOADS = "workloads"
 WORKLOAD_ID = "workload_id"
 METADATA = "metadata"
 CPU_ALLOCATOR = "cpu_allocator"
+HISTORY = "history"
+SNAPSHOT = "snapshot"
 
 TITUS_ISOLATE_CELL_HEADER = "X-Titus-Isolate-Cell"
 UNKNOWN_CELL = "unknown_cell"

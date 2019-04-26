@@ -8,6 +8,8 @@ from titus_isolate.model.workload import Workload
 from titus_optimize.data import Query, build_ts_features
 from titus_optimize.predictors import PredictorWithFilter
 
+from titus_isolate.monitor.cpu_usage import WorkloadCpuUsage
+
 
 class PredEnvironment:
     def __init__(self, region, nflx_env, hour_of_day):
@@ -23,7 +25,9 @@ class CpuUsagePredictor:
         self.__use_whitelist = use_whitelist
         self.__model = pf
     
-    def predict(self, workload: Workload, cpu_usage_last_hour: np.array, pred_env: PredEnvironment) -> float:
+    def predict(self, workload: Workload, cpu_usage: WorkloadCpuUsage, pred_env: PredEnvironment) -> float:
+        cpu_usage_last_hour = np.array(cpu_usage.history.values, dtype=np.float32)
+
         image = workload.get_image()
         tokens = image.split('@')
         valid_digest = False

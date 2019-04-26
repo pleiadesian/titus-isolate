@@ -1,11 +1,20 @@
-from titus_isolate.allocate.constants import CPU, CPU_USAGE, WORKLOADS, METADATA
+from typing import Dict
+
+from titus_isolate.allocate.constants import CPU, CPU_USAGE, WORKLOADS, METADATA, HISTORY, SNAPSHOT
 from titus_isolate.allocate.utils import parse_cpu, parse_workloads, parse_cpu_usage
 from titus_isolate.model.processor.cpu import Cpu
+from titus_isolate.model.workload import Workload
+from titus_isolate.monitor.cpu_usage import WorkloadCpuUsage
 
 
 class AllocateRequest:
 
-    def __init__(self, cpu: Cpu, workloads: dict, cpu_usage: dict, metadata: dict):
+    def __init__(
+            self,
+            cpu: Cpu,
+            workloads: Dict[str, Workload],
+            cpu_usage: Dict[str, WorkloadCpuUsage],
+            metadata: dict):
         """
         A rebalance request encapsulates all information needed to rebalance the assignment of threads to workloads.
 
@@ -19,16 +28,16 @@ class AllocateRequest:
         self.__cpu_usage = cpu_usage
         self.__metadata = metadata
 
-    def get_cpu(self):
+    def get_cpu(self) -> Cpu:
         return self.__cpu
 
-    def get_cpu_usage(self):
+    def get_cpu_usage(self) -> Dict[str, WorkloadCpuUsage]:
         return self.__cpu_usage
 
-    def get_workloads(self):
+    def get_workloads(self) -> Dict[str, Workload]:
         return self.__workloads
 
-    def get_metadata(self):
+    def get_metadata(self) -> dict:
         return self.__metadata
 
     def to_dict(self):
@@ -40,11 +49,20 @@ class AllocateRequest:
         }
 
     @staticmethod
-    def __get_serializable_usage(cpu_usage: dict):
-        serializable_usage = {}
+    def __get_serializable_usage(cpu_usage: Dict[str, WorkloadCpuUsage]):
+        serializable_history = []
+        serializable_snapshot = []
+
         for w_id, usage in cpu_usage.items():
-            serializable_usage[w_id] = [str(u) for u in usage]
-        return serializable_usage
+            for value in usage.history:
+                serializable_history.append(str(value))
+            for value in usage.snapshot:
+                serializable_snapshot.append(str(value))
+
+        return {
+            HISTORY: serializable_history,
+            SNAPSHOT: serializable_snapshot
+        }
 
     @staticmethod
     def __get_serializable_workloads(workloads: list):

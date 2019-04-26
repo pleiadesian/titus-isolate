@@ -1,8 +1,10 @@
 import datetime
+from typing import Dict
 
 import boto3 as boto3
 
 from titus_isolate import log
+from titus_isolate.allocate.constants import HISTORY, SNAPSHOT
 from titus_isolate.config.constants import MODEL_BUCKET_FORMAT_STR, MODEL_BUCKET_PREFIX, \
     DEFAULT_MODEL_BUCKET_PREFIX, MODEL_BUCKET_LEAF, DEFAULT_MODEL_BUCKET_LEAF, MODEL_PREFIX_FORMAT_STR
 from titus_isolate.config.utils import get_required_property
@@ -11,6 +13,7 @@ from titus_isolate.model.processor.cpu import Cpu
 from titus_isolate.model.processor.package import Package
 from titus_isolate.model.processor.thread import Thread
 from titus_isolate.model.workload import Workload
+from titus_isolate.monitor.cpu_usage import CpuUsageHistory, CpuUsageSnapshot, WorkloadCpuUsage
 from titus_isolate.utils import get_config_manager
 
 
@@ -31,7 +34,7 @@ def parse_cpu(cpu_dict: dict) -> Cpu:
     return Cpu(packages)
 
 
-def parse_workloads(workloads: dict) -> list:
+def parse_workloads(workloads: dict) -> Dict[str, Workload]:
     __workloads = {}
     for w_id, workload in workloads.items():
         __workloads[w_id] = parse_workload(workload)
@@ -60,12 +63,28 @@ def parse_workload(workload_dict: dict) -> Workload:
     return workload
 
 
-def parse_cpu_usage(cpu_usage: dict) -> dict:
-    parsed_cpu_usage = {}
-    for k, v in cpu_usage.items():
-        parsed_cpu_usage[k] = [float(val) for val in v]
+def parse_cpu_usage_history(cpu_usage_history: dict) -> CpuUsageHistory:
+    return CpuUsageHistory(
+        int(cpu_usage_history["duration_sec"]),
+        int(cpu_usage_history["granularity_sec"]),
+        [float(v) for v in cpu_usage_history["values"]])
 
-    return parsed_cpu_usage
+
+def parse_cpu_usage_snapshot(cpu_usage_snapshot: dict) -> CpuUsageSnapshot:
+    return CpuUsageSnapshot(
+        cpu_usage_snapshot["sample_sec"],
+        [float(v) for v in cpu_usage_snapshot["values"]])
+
+
+def parse_cpu_usage(serialized_cpu_usage: dict) -> Dict[str, WorkloadCpuUsage]:
+    cpu_usage = {}
+    for w_id, values in serialized_cpu_usage.items():
+        history = parse_cpu_usage_history(serialized_cpu_usage[w_id][HISTORY])
+        snapshot = parse_cpu_usage_snapshot(serialized_cpu_usage[w_id][SNAPSHOT])
+        cpu_usage[w_id] = WorkloadCpuUsage(history, snapshot)
+
+    return cpu_usage
+
 
 def get_cpu_model_bucket_name():
     format_str = get_required_property(MODEL_BUCKET_FORMAT_STR)

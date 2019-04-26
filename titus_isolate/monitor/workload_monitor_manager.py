@@ -1,5 +1,6 @@
 import collections
 from threading import Lock, Thread
+from typing import Dict
 
 import schedule
 
@@ -9,6 +10,7 @@ from titus_isolate.event.constants import BURST, STATIC
 from titus_isolate.metrics.constants import BURST_POOL_USAGE_KEY, STATIC_POOL_USAGE_KEY
 from titus_isolate.metrics.metrics_reporter import MetricsReporter
 from titus_isolate.monitor.cgroup_metrics_provider import CgroupMetricsProvider
+from titus_isolate.monitor.cpu_usage import WorkloadCpuUsage
 from titus_isolate.monitor.cpu_usage_provider import CpuUsageProvider
 from titus_isolate.monitor.workload_perf_mon import WorkloadPerformanceMonitor
 from titus_isolate.utils import get_workload_manager
@@ -24,11 +26,11 @@ class WorkloadMonitorManager(CpuUsageProvider, MetricsReporter):
 
         schedule.every(sample_interval).seconds.do(self.__sample)
 
-    def get_cpu_usage(self, seconds: int, agg_granularity_secs: int) -> dict:
+    def get_cpu_usage(self, seconds: int, agg_granularity_secs: int) -> Dict[str, WorkloadCpuUsage]:
         with self.__lock:
             cpu_usage = {}
             for workload_id, monitor in self.get_monitors().items():
-                cpu_usage[workload_id] = monitor.get_normalized_cpu_usage_last_seconds(seconds, agg_granularity_secs)
+                cpu_usage[workload_id] = monitor.get_cpu_usage(seconds, agg_granularity_secs)
 
         return cpu_usage
 
@@ -72,7 +74,7 @@ class WorkloadMonitorManager(CpuUsageProvider, MetricsReporter):
 
         return pool_cpu_usage
 
-    def get_monitors(self):
+    def get_monitors(self) -> Dict[str, WorkloadPerformanceMonitor]:
         return self.__monitors
 
     def to_dict(self):

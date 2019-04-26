@@ -1,11 +1,21 @@
+from typing import Dict
+
 from titus_isolate.allocate.allocate_request import AllocateRequest, deserialize_allocate_request
 from titus_isolate.allocate.constants import WORKLOAD_ID
 from titus_isolate.model.processor.cpu import Cpu
+from titus_isolate.model.workload import Workload
+from titus_isolate.monitor.cpu_usage import WorkloadCpuUsage
 
 
 class AllocateThreadsRequest(AllocateRequest):
 
-    def __init__(self, cpu: Cpu, workload_id: str, workloads: dict, cpu_usage: dict, metadata: dict):
+    def __init__(
+            self,
+            cpu: Cpu,
+            workload_id: str,
+            workloads: Dict[str, Workload],
+            cpu_usage: Dict[str, WorkloadCpuUsage],
+            metadata: dict):
         """
         A threads request encapsulates all information needed to assign threads to workloads when a workload is being
         added or removed.
@@ -19,7 +29,7 @@ class AllocateThreadsRequest(AllocateRequest):
         super().__init__(cpu, workloads, cpu_usage, metadata)
         self.__workload_id = workload_id
 
-    def get_workload_id(self):
+    def get_workload_id(self) -> str:
         return self.__workload_id
 
     def to_dict(self):

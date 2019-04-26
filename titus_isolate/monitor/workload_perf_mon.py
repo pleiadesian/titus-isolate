@@ -1,12 +1,13 @@
 import calendar
 import collections
-from datetime import datetime as dt, timedelta as td
+from datetime import datetime as dt
 from math import ceil
 from threading import Lock
 
 import numpy as np
 
 from titus_isolate import log
+from titus_isolate.monitor.cpu_usage import CpuUsageHistory, CpuUsageSnapshot, WorkloadCpuUsage
 
 
 class WorkloadPerformanceMonitor:
@@ -14,6 +15,7 @@ class WorkloadPerformanceMonitor:
     def __init__(self, metrics_provider, sample_frequency_sec):
         self.__metrics_provider = metrics_provider
         self.__sample_frequency_sec = sample_frequency_sec
+
         # Maintain buffers for the last hour
         self.__max_buffer_size = ceil(60 * 60 / sample_frequency_sec)
         self.__buffer_lock = Lock()
@@ -25,13 +27,41 @@ class WorkloadPerformanceMonitor:
 
     def get_buffers(self):
         with self.__buffer_lock:
-            return calendar.timegm(dt.utcnow().timetuple()), [calendar.timegm(t.timetuple()) for t in self.__timestamps], [list(e) for e in self.__buffers]
-    
-    def get_normalized_cpu_usage_last_seconds(self, seconds, agg_granularity_secs=60):
+            return calendar.timegm(dt.utcnow().timetuple()), \
+                   [calendar.timegm(t.timetuple()) for t in self.__timestamps], \
+                   [list(e) for e in self.__buffers]
+
+    def get_cpu_usage(self, seconds, agg_granularity_secs=60) -> WorkloadCpuUsage:
+        with self.__buffer_lock:
+            history = self.get_usage_history(seconds, agg_granularity_secs)
+            snapshot = self.get_usage_snapshot()
+            return WorkloadCpuUsage(history, snapshot)
+
+    def get_usage_history(self, seconds, agg_granularity_secs=60) -> CpuUsageHistory:
         num_buckets = ceil(seconds / agg_granularity_secs)
         if num_buckets > self.__max_buffer_size:
             raise Exception("Aggregation buffer too small to satisfy query.")
-        return WorkloadPerformanceMonitor.normalize_data(*self.get_buffers(), num_buckets, agg_granularity_secs)
+
+        ts_snapshot, timestamps, buffers = self.get_buffers()
+        values = WorkloadPerformanceMonitor.normalize_data(
+            ts_snapshot,
+            timestamps,
+            buffers,
+            num_buckets,
+            agg_granularity_secs).tolist()
+
+        return CpuUsageHistory(seconds, agg_granularity_secs, list(values))
+
+    def get_usage_snapshot(self) -> CpuUsageSnapshot:
+        if len(self.__timestamps) < 2:
+            return None
+
+        with self.__buffer_lock:
+            snapshot = []
+            for buffer in self.__buffers:
+                snapshot.append(buffer[-1] - buffer[-2])
+
+            return CpuUsageSnapshot(self.__sample_frequency_sec, snapshot)
 
     def sample(self):
         cpu_usage_snapshot = self.__metrics_provider.get_cpu_usage()
