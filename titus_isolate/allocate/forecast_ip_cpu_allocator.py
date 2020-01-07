@@ -62,6 +62,8 @@ class ForecastIPCpuAllocator(CpuAllocator):
         self.__cnt_rebalance_calls = 0
         self.__call_meta = None  # track things __place_threads call
 
+        log.info("ForecastIPCpuAllocator members: {}".format(self.__dict__))
+
     def assign_threads(self, request: AllocateThreadsRequest) -> AllocateResponse:
         self.__call_meta = {}
         cpu = request.get_cpu()
