@@ -219,6 +219,8 @@ class SolverMetricsReporter(MetricsReporter):
 
 
 if __name__ != '__main__' and not is_testing():
+    log.info("Environment: {}".format(os.environ))
+
     log.info("Configuring logging...")
     gunicorn_logger = logging.getLogger('gunicorn.error')
     app.logger.handlers = gunicorn_logger.handlers
