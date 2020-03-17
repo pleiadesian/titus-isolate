@@ -24,3 +24,19 @@ WORKLOAD_JSON_READ_SLEEP_SECONDS = 0.1
 
 WORKLOAD_JSON_RUNSTATE_KEY = 'runState'
 WORKLOAD_JSON_LAUNCHTIME_KEY = 'launchTimeUnixSec'
+
+CPU = "cpu"
+MEMORY = "memory"
+EPHEMERAL_STORAGE = "ephemeral-storage"
+TITUS_DISK = "titus/disk"
+TITUS_NETWORK = "titus/network"
+
+APP_NAME = "applicationName"
+COMMAND = "command"
+CONTAINER = "container"
+CPU_BURSTING = "titusParameter.agent.allowCpuBursting"
+ENTRYPOINT = "entryPoint"
+IMAGE = "image"
+JOB_DESCRIPTOR = "jobDescriptor"
+NAME = "name"
+OWNER_EMAIL = "titus.agent.ownerEmail"

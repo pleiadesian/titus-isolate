@@ -24,7 +24,7 @@ def get_current_workloads(docker_client):
     workloads = []
     for container in docker_client.containers.list():
         try:
-            workloads.append(titus_isolate.model.utils.get_workload_from_disk(container.name))
+            workloads.append(titus_isolate.model.utils.get_workload_from_kubernetes(container.name))
         except:
             log.exception("Failed to read environment for container: '%s'", container.name)
 

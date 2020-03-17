@@ -36,7 +36,8 @@ from titus_isolate.predict.cpu_usage_predictor_manager import CpuUsagePredictorM
 from titus_isolate.real_exit_handler import RealExitHandler
 from titus_isolate.utils import get_config_manager, get_workload_manager, \
     set_event_log_manager, start_periodic_scheduling, set_cpu_usage_predictor_manager, \
-    set_workload_monitor_manager, set_workload_manager, set_event_manager, is_kubernetes, get_event_manager
+    set_workload_monitor_manager, set_workload_manager, set_event_manager, is_kubernetes, set_pod_manager
+from titus_isolate.watcher.pod_manager import PodManager
 
 app = Flask(__name__)
 
@@ -165,6 +166,11 @@ if __name__ != '__main__' and not is_testing():
     logging.getLogger('schedule').setLevel(logging.WARN)
 
     exit_handler = RealExitHandler()
+
+    log.info("Starting pod watcher...")
+    pod_manager = PodManager()
+    pod_manager.start()
+    set_pod_manager(pod_manager)
 
     log.info("Setting event log manager...")
     event_log_manager = KeystoneEventLogManager()

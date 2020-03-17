@@ -1,24 +1,22 @@
+import base64
+import gzip
 import json
-import re
-import time
 
-from typing import Dict, List
+from typing import Dict, List, Union
+
+from kubernetes.client import V1Container, V1Pod
+from kubernetes.utils import parse_quantity
 
 from titus_isolate import log
 from titus_isolate.allocate.constants import FREE_THREAD_IDS
-from titus_isolate.cgroup.utils import get_json_path, get_env_path
 from titus_isolate.event.constants import BURST, STATIC
-from titus_isolate.model.constants import WORKLOAD_ENV_LINE_REGEXP, WORKLOAD_ENV_CPU_KEY, WORKLOAD_ENV_MEM_KEY, \
-    WORKLOAD_ENV_DISK_KEY, WORKLOAD_ENV_NETWORK_KEY, WORKLOAD_JSON_APP_NAME_KEY, WORKLOAD_JSON_PASSTHROUGH_KEY, \
-    WORKLOAD_JSON_OWNER_KEY, WORKLOAD_JSON_IMAGE_KEY, WORKLOAD_JSON_IMAGE_DIGEST_KEY, WORKLOAD_JSON_PROCESS_KEY, \
-    WORKLOAD_JSON_COMMAND_KEY, WORKLOAD_JSON_ENTRYPOINT_KEY, WORKLOAD_JSON_JOB_TYPE_KEY, WORKLOAD_JSON_CPU_BURST_KEY, \
-    WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY, \
-    WORKLOAD_JSON_READ_ATTEMPTS, WORKLOAD_JSON_READ_SLEEP_SECONDS, WORKLOAD_JSON_RUNSTATE_KEY, \
-    WORKLOAD_JSON_LAUNCHTIME_KEY, WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY
+from titus_isolate.model.constants import *
 from titus_isolate.model.duration_prediction import DurationPrediction
 from titus_isolate.model.processor.cpu import Cpu
 from titus_isolate.model.workload import Workload
 from titus_isolate.monitor.free_thread_provider import FreeThreadProvider
+from titus_isolate.utils import get_pod_manager
+from titus_isolate.watcher.pod_manager import PodManager
 
 
 def get_duration_predictions(input: str) -> List[DurationPrediction]:
@@ -36,43 +34,111 @@ def get_duration_predictions(input: str) -> List[DurationPrediction]:
         return []
 
 
-def get_workload_from_disk(identifier):
-    # In theory these files could go away if the task dies. that is ok.  A failure here will only result in the workload
-    # not being created which is fine because it is dead anyway.
-    json_data = __get_workload_json(identifier)
-    passthrough_data = json_data[WORKLOAD_JSON_PASSTHROUGH_KEY]
-    env_data = __get_workload_env(identifier)  # note that this is string -> string
+def get_main_container(pod: V1Pod) -> Union[V1Container, None]:
+    pod_name = pod.metadata.name
+    containers = [c for c in pod.spec.containers if c.name == pod_name]
 
-    launch_time = int(json_data[WORKLOAD_JSON_RUNSTATE_KEY][WORKLOAD_JSON_LAUNCHTIME_KEY])
-    cpus = int(env_data[WORKLOAD_ENV_CPU_KEY])
-    mem = int(env_data[WORKLOAD_ENV_MEM_KEY])
-    disk = int(env_data[WORKLOAD_ENV_DISK_KEY])
-    network = int(env_data[WORKLOAD_ENV_NETWORK_KEY])
-    app_name = json_data[WORKLOAD_JSON_APP_NAME_KEY]
-    owner_email = passthrough_data[WORKLOAD_JSON_OWNER_KEY]
-    image = '{}@{}'.format(json_data[WORKLOAD_JSON_IMAGE_KEY], json_data[WORKLOAD_JSON_IMAGE_DIGEST_KEY])
+    if len(containers) == 1:
+        return containers[0]
 
-    command = None
-    if WORKLOAD_JSON_COMMAND_KEY in json_data[WORKLOAD_JSON_PROCESS_KEY]:
-        command = json_data[WORKLOAD_JSON_PROCESS_KEY][WORKLOAD_JSON_COMMAND_KEY]
+    log.info("Failed to find main container for: %s", pod_name)
+    return None
 
-    entrypoint = None
-    if WORKLOAD_JSON_ENTRYPOINT_KEY in json_data[WORKLOAD_JSON_PROCESS_KEY]:
-        entrypoint = json_data[WORKLOAD_JSON_PROCESS_KEY][WORKLOAD_JSON_ENTRYPOINT_KEY]
 
-    job_type = passthrough_data[WORKLOAD_JSON_JOB_TYPE_KEY]
+def get_job_descriptor(pod: V1Pod) -> Union[object, None]:
+    metadata = pod.metadata
+    annotations = metadata.annotations
 
+    if JOB_DESCRIPTOR not in annotations.keys():
+        return None
+
+    return decode_job_descriptor(annotations.get(JOB_DESCRIPTOR))
+
+
+def decode_job_descriptor(encoded_job_descriptor: str) -> object:
+    jd_bytes = base64.b64decode(encoded_job_descriptor, validate=True)
+    jd_bytes = gzip.decompress(jd_bytes)
+    return json.loads(jd_bytes.decode("utf-8"))
+
+
+def get_app_name(job_descriptor: object) -> str:
+    return job_descriptor[APP_NAME]
+
+
+def get_image(job_descriptor: object) -> str:
+    return job_descriptor[CONTAINER][IMAGE][NAME]
+
+
+def get_cmd(job_descriptor: object) -> str:
+    return ' '.join(job_descriptor[CONTAINER][COMMAND])
+
+
+def get_entrypoint(job_descriptor: object) -> str:
+    return ' '.join(job_descriptor[CONTAINER][ENTRYPOINT])
+
+
+def get_job_type(job_descriptor: object) -> str:
+    return job_descriptor[CONTAINER][IMAGE][NAME]
+
+
+def parse_kubernetes_value(val: str) -> float:
+    return str(parse_quantity(val))
+
+
+def get_workload_from_kubernetes(identifier: str) -> Union[Workload, None]:
+
+    def __get_typed_pod_manager() -> PodManager:
+        return get_pod_manager()
+
+    pod_manager = __get_typed_pod_manager()
+    if pod_manager is None:
+        return None
+
+    pod = pod_manager.get_pod(identifier)
+    if pod is None:
+        return None
+
+    metadata = pod.metadata
+    main_container = get_main_container(pod)
+    resource_requests = main_container.resources.requests
+
+    launch_time = metadata.creation_timestamp.timestamp()
+    identifier = metadata.name
+
+    # Resources
+    cpus = parse_kubernetes_value(resource_requests[CPU])
+    mem = parse_kubernetes_value(resource_requests[MEMORY])
+    network = parse_kubernetes_value(resource_requests[TITUS_NETWORK])
+
+    if EPHEMERAL_STORAGE in resource_requests.keys():
+        disk = resource_requests[EPHEMERAL_STORAGE]
+    else:
+        disk = resource_requests[TITUS_DISK]
+    disk = parse_kubernetes_value(disk)
+
+
+    # Job metadata
+    job_descriptor = get_job_descriptor(pod)
+    app_name = get_app_name(job_descriptor)
+    owner_email = metadata.annotations[OWNER_EMAIL]
+    image = get_image(job_descriptor)
+    command = get_cmd(job_descriptor)
+    entrypoint = get_entrypoint(job_descriptor)
+    job_type = metadata.annotations[WORKLOAD_JSON_JOB_TYPE_KEY]
+
+    workload_type_str = metadata.annotations.get(CPU_BURSTING)
     workload_type = STATIC
-    if json_data[WORKLOAD_JSON_CPU_BURST_KEY]:
+    if workload_type_str is not None and str(workload_type_str).lower() == "true":
         workload_type = BURST
 
     opportunistic_cpus = 0
-    if WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY in passthrough_data:
-        opportunistic_cpus = passthrough_data[WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY]
+    if WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY in metadata.annotations.keys():
+        opportunistic_cpus = metadata.annotations.get(WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY)
 
     duration_predictions = []
-    if WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY in passthrough_data:
-        duration_predictions = get_duration_predictions(passthrough_data[WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY])
+    if WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY in metadata.annotations.keys():
+        duration_predictions = \
+            get_duration_predictions(metadata.annotations.get(WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY))
 
     return Workload(
         launch_time=launch_time,
@@ -90,35 +156,6 @@ def get_workload_from_disk(identifier):
         workload_type=workload_type,
         opportunistic_thread_count=opportunistic_cpus,
         duration_predictions=duration_predictions)
-
-
-def __get_workload_json(identifier):
-    for attempt in range(WORKLOAD_JSON_READ_ATTEMPTS):
-        try:
-            with open(get_json_path(identifier)) as json_file:
-                return json.load(json_file)
-        except json.decoder.JSONDecodeError as err:
-            log.debug("failed to read container %s json %s, retrying in %s seconds: %s", identifier,
-                      get_json_path(identifier), WORKLOAD_JSON_READ_SLEEP_SECONDS, err)
-        else:
-            break
-        time.sleep(WORKLOAD_JSON_READ_SLEEP_SECONDS)
-    else:
-        raise TimeoutError("failed to read container {} json {} after {} attempts".format(
-            identifier, get_json_path(identifier), WORKLOAD_JSON_READ_ATTEMPTS))
-
-
-def __get_workload_env(identifier):
-    env = {}
-    with open(get_env_path(identifier)) as env_file:
-        line = env_file.readline()
-        while line:
-            match = re.match(WORKLOAD_ENV_LINE_REGEXP, line)
-            if match is None:
-                continue
-            env[match.group(1)] = match.group(2)
-            line = env_file.readline()
-    return env
 
 
 def get_burst_workloads(workloads):

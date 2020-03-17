@@ -38,7 +38,8 @@ class PcpResourceUsageProvider:
         try:
             # Avoid making a metrics query on a potentially empty dataset which causes the query command to fail, which
             # causes noisy logs which look like failures.
-            if len(get_workload_manager().get_workloads()) == 0:
+            workload_manager = get_workload_manager()
+            if workload_manager is None or len(workload_manager.get_workloads()) == 0:
                 log.info('No workloads so skipping pcp snapshot.')
                 return
 
