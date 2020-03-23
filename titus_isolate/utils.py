@@ -31,11 +31,22 @@ __event_log_manager = None
 workload_monitor_manager_lock = Lock()
 __workload_monitor_manager = None
 
-cpu_usage_predictor_manager_lock = Lock()
-__cpu_usage_predictor_manager = None
-
 pod_manager_lock = Lock()
 __pod_manager = None
+
+__managers = [
+    __config_manager,
+    __workload_manager,
+    __event_manager,
+    __event_log_manager,
+    __workload_monitor_manager,
+    __pod_manager
+]
+
+
+def managers_are_initialized() -> bool:
+    unset_managers = [m for m in __managers if m is None]
+    return len(unset_managers) > 0
 
 
 def get_config_manager(property_provider=AgentPropertyProvider()):
@@ -109,20 +120,6 @@ def get_workload_monitor_manager():
 
     with workload_monitor_manager_lock:
         return __workload_monitor_manager
-
-
-def set_cpu_usage_predictor_manager(cpu_usage_predictor_manager):
-    global __cpu_usage_predictor_manager
-
-    with cpu_usage_predictor_manager_lock:
-        __cpu_usage_predictor_manager = cpu_usage_predictor_manager
-
-
-def get_cpu_usage_predictor_manager():
-    global __cpu_usage_predictor_manager
-
-    with cpu_usage_predictor_manager_lock:
-        return __cpu_usage_predictor_manager
 
 
 def set_pod_manager(pod_manager):

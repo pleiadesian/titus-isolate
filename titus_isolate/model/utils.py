@@ -1,15 +1,17 @@
 import base64
 import gzip
 import json
+from datetime import datetime
 
 from typing import Dict, List, Union
 
-from kubernetes.client import V1Container, V1Pod
+from kubernetes.client import V1Container, V1Pod, V1ContainerStatus
 from kubernetes.utils import parse_quantity
 
 from titus_isolate import log
 from titus_isolate.allocate.constants import FREE_THREAD_IDS
 from titus_isolate.event.constants import BURST, STATIC
+from titus_isolate.metrics.constants import RUNNING
 from titus_isolate.model.constants import *
 from titus_isolate.model.duration_prediction import DurationPrediction
 from titus_isolate.model.processor.cpu import Cpu
@@ -32,6 +34,36 @@ def get_duration_predictions(input: str) -> List[DurationPrediction]:
     except:
         log.exception("Failed to parse duration predictions: '{}'".format(input))
         return []
+
+
+def get_start_time(pod: V1Pod) -> Union[int, None]:
+    """
+    Returns the start time of the main container in ms from UTC epoch
+    """
+    if pod.status.phase != "Running":
+        return None
+
+    main_container_status = get_main_container_status(pod)
+    if main_container_status is None:
+        return None
+
+    state = main_container_status.state
+    if state is None:
+        return None
+
+    running = state.running
+    if running is None:
+        return None
+
+    return int(running.started_at.timestamp() * 1000)
+
+
+def get_main_container_status(pod: V1Pod) -> Union[V1ContainerStatus, None]:
+    statuses = [s for s in pod.status.container_statuses if s.name == pod.metadata.name]
+    if len(statuses) != 1:
+        return None
+
+    return statuses[0]
 
 
 def get_main_container(pod: V1Pod) -> Union[V1Container, None]:
@@ -116,9 +148,9 @@ def get_workload_from_kubernetes(identifier: str) -> Union[Workload, None]:
         disk = resource_requests[TITUS_DISK]
     disk = parse_kubernetes_value(disk)
 
-
     # Job metadata
     job_descriptor = get_job_descriptor(pod)
+    log.debug("job_descriptor: %s", job_descriptor)
     app_name = get_app_name(job_descriptor)
     owner_email = metadata.annotations[OWNER_EMAIL]
     image = get_image(job_descriptor)

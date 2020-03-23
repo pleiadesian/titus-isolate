@@ -90,6 +90,7 @@ class PodManager:
     def __modify_pod(self, event):
         pod_name = get_pod_name(event)
         log.info("Modify pod event: %s", pod_name)
+        self.__store_pod(event)
 
     def __store_pod(self, event):
         self.__pod_cache[get_pod_name(event)] = get_pod_object(event)

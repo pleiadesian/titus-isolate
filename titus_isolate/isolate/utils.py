@@ -15,7 +15,6 @@ from titus_isolate.config.constants import CPU_ALLOCATOR, CPU_ALLOCATORS, DEFAUL
 from titus_isolate.monitor.empty_free_thread_provider import EmptyFreeThreadProvider
 from titus_isolate.monitor.free_thread_provider import FreeThreadProvider
 from titus_isolate.monitor.oversubscribe_free_thread_provider import OversubscribeFreeThreadProvider
-from titus_isolate.utils import get_cpu_usage_predictor_manager
 
 CPU_ALLOCATOR_NAME_TO_CLASS_MAP = {
     IP: IntegerProgramCpuAllocator,
@@ -61,6 +60,6 @@ def get_allocator(allocator_str, config_manager):
         return CPU_ALLOCATOR_NAME_TO_CLASS_MAP[allocator_str](free_thread_provider)
 
     return ForecastIPCpuAllocator(
-        cpu_usage_predictor_manager=get_cpu_usage_predictor_manager(),
+        cpu_usage_predictor_manager=None,
         config_manager=config_manager,
         free_thread_provider=free_thread_provider)
