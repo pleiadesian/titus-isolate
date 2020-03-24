@@ -1,19 +1,19 @@
-import datetime
+import json
+from typing import Dict
 
 import boto3 as boto3
+from kubernetes.client import V1Pod
+from kubernetes import client
 
 from titus_isolate import log
 from titus_isolate.config.constants import MODEL_BUCKET_FORMAT_STR, MODEL_BUCKET_PREFIX, \
     DEFAULT_MODEL_BUCKET_PREFIX, MODEL_BUCKET_LEAF, DEFAULT_MODEL_BUCKET_LEAF, MODEL_PREFIX_FORMAT_STR
 from titus_isolate.config.utils import get_required_property
-from titus_isolate.model.duration_prediction import deserialize_duration_prediction
 from titus_isolate.model.processor.core import Core
 from titus_isolate.model.processor.cpu import Cpu
 from titus_isolate.model.processor.package import Package
 from titus_isolate.model.processor.thread import Thread
-from titus_isolate.model.workload import Workload, LAUNCH_TIME_KEY, ID_KEY, THREAD_COUNT_KEY, MEM_KEY, DISK_KEY, \
-    NETWORK_KEY, APP_NAME_KEY, OWNER_EMAIL_KEY, IMAGE_KEY, COMMAND_KEY, ENTRY_POINT_KEY, JOB_TYPE_KEY, \
-    WORKLOAD_TYPE_KEY, OPPORTUNISTIC_THREAD_COUNT_KEY, DURATION_PREDICTIONS_KEY, deserialize_workload
+from titus_isolate.model.workload import deserialize_workload
 from titus_isolate.utils import get_config_manager
 
 
@@ -39,6 +39,26 @@ def parse_workloads(workloads: dict) -> dict:
     for w_id, workload in workloads.items():
         __workloads[w_id] = deserialize_workload(workload)
     return __workloads
+
+
+def parse_pods(pods: dict) -> Dict[str, V1Pod]:
+    __pods = {}
+    for pod_name, pod_str in pods.items():
+        __pods[pod_name] = parse_pod(pod_str)
+
+    return __pods
+
+
+def parse_pod(pod: str) -> V1Pod:
+    class ResponseStub(object):
+        def __init__(self, *args):
+            self.data = None
+
+    resp = ResponseStub()
+    resp.data = pod
+
+    api_client = client.api_client.ApiClient()
+    return api_client.deserialize(response=resp, response_type=V1Pod)
 
 
 def parse_usage(usage: dict) -> dict:

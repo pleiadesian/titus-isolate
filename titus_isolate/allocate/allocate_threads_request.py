@@ -1,4 +1,7 @@
 import copy
+from typing import Dict
+
+from kubernetes.client import V1Pod
 
 from titus_isolate.allocate.allocate_request import AllocateRequest, deserialize_allocate_request
 from titus_isolate.allocate.constants import WORKLOAD_ID
@@ -11,6 +14,7 @@ class AllocateThreadsRequest(AllocateRequest):
                  cpu: Cpu,
                  workload_id: str,
                  workloads: dict,
+                 pods: Dict[str, V1Pod],
                  cpu_usage: dict,
                  mem_usage: dict,
                  net_recv_usage: dict,
@@ -29,6 +33,7 @@ class AllocateThreadsRequest(AllocateRequest):
         super().__init__(
             cpu=cpu,
             workloads=workloads,
+            pods=pods,
             cpu_usage=cpu_usage,
             mem_usage=mem_usage,
             net_recv_usage=net_recv_usage,

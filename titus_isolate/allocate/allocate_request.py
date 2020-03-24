@@ -1,9 +1,12 @@
 import copy
-from typing import List, Dict
+import json
+from typing import Dict, List
+
+from kubernetes.client import V1Pod
 
 from titus_isolate.allocate.constants import CPU, CPU_USAGE, WORKLOADS, METADATA, CPU_ARRAY, MEM_USAGE, NET_RECV_USAGE, \
-    NET_TRANS_USAGE, DISK_USAGE
-from titus_isolate.allocate.utils import parse_cpu, parse_workloads, parse_usage
+    NET_TRANS_USAGE, DISK_USAGE, PODS
+from titus_isolate.allocate.utils import parse_cpu, parse_workloads, parse_usage, parse_pods
 from titus_isolate.model.processor.cpu import Cpu
 from titus_isolate.model.workload import Workload
 
@@ -12,7 +15,8 @@ class AllocateRequest:
 
     def __init__(self,
                  cpu: Cpu,
-                 workloads: dict,
+                 workloads: Dict[str, Workload],
+                 pods: Dict[str, V1Pod],
                  cpu_usage: dict,
                  mem_usage: dict,
                  net_recv_usage: dict,
@@ -21,14 +25,10 @@ class AllocateRequest:
                  metadata: dict):
         """
         A rebalance request encapsulates all information needed to rebalance the assignment of threads to workloads.
-
-        :param cpu: An object indicating the state of the CPU before workload assignment
-        :param workloads: A map of all relevant workloads including the workload to be assigned
-                          The keys are workload ids, the objects are Workload objects
-        :param cpu_usage: A map of cpu usage per workload
         """
         self.__cpu = copy.deepcopy(cpu)
         self.__workloads = copy.deepcopy(workloads)
+        self.__pods = copy.deepcopy(pods)
         self.__cpu_usage = copy.deepcopy(cpu_usage)
         self.__mem_usage = copy.deepcopy(mem_usage)
         self.__net_recv_usage = copy.deepcopy(net_recv_usage)
@@ -57,6 +57,9 @@ class AllocateRequest:
     def get_workloads(self) -> Dict[str, Workload]:
         return self.__workloads
 
+    def get_pods(self) -> Dict[str, V1Pod]:
+        return self.__pods
+
     def get_metadata(self):
         return self.__metadata
 
@@ -70,6 +73,7 @@ class AllocateRequest:
             NET_TRANS_USAGE: self.__get_serializable_usage(self.get_net_trans_usage()),
             DISK_USAGE: self.__get_serializable_usage(self.get_disk_usage()),
             WORKLOADS: self.__get_serializable_workloads(list(self.get_workloads().values())),
+            PODS: self.__get_serializable_pods(list(self.get_pods().values())),
             METADATA: self.get_metadata()
         }
 
@@ -81,17 +85,26 @@ class AllocateRequest:
         return serializable_usage
 
     @staticmethod
-    def __get_serializable_workloads(workloads: list):
+    def __get_serializable_workloads(workloads: List[Workload]):
         serializable_workloads = {}
         for w in workloads:
             serializable_workloads[w.get_id()] = w.to_dict()
 
         return serializable_workloads
 
+    @staticmethod
+    def __get_serializable_pods(pods: List[V1Pod]):
+        serializable_pods = {}
+        for p in pods:
+            serializable_pods[p.metadata.name] = json.dumps(p.to_dict(), default=str)
+
+        return serializable_pods
+
 
 def deserialize_allocate_request(serialized_request: dict) -> AllocateRequest:
     cpu = parse_cpu(serialized_request[CPU])
     workloads = parse_workloads(serialized_request[WORKLOADS])
+    pods = parse_pods(serialized_request[PODS])
     cpu_usage = parse_usage(serialized_request.get(CPU_USAGE, {}))
     mem_usage = parse_usage(serialized_request.get(MEM_USAGE, {}))
     net_recv_usage = parse_usage(serialized_request.get(NET_RECV_USAGE, {}))
@@ -101,6 +114,7 @@ def deserialize_allocate_request(serialized_request: dict) -> AllocateRequest:
     return AllocateRequest(
         cpu=cpu,
         workloads=workloads,
+        pods=pods,
         cpu_usage=cpu_usage,
         mem_usage=mem_usage,
         net_recv_usage=net_recv_usage,

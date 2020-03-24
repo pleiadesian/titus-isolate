@@ -117,19 +117,7 @@ def parse_kubernetes_value(val: str) -> float:
     return str(parse_quantity(val))
 
 
-def get_workload_from_kubernetes(identifier: str) -> Union[Workload, None]:
-
-    def __get_typed_pod_manager() -> PodManager:
-        return get_pod_manager()
-
-    pod_manager = __get_typed_pod_manager()
-    if pod_manager is None:
-        return None
-
-    pod = pod_manager.get_pod(identifier)
-    if pod is None:
-        return None
-
+def get_workload_from_pod(pod: V1Pod) -> Workload:
     metadata = pod.metadata
     main_container = get_main_container(pod)
     resource_requests = main_container.resources.requests
@@ -188,6 +176,22 @@ def get_workload_from_kubernetes(identifier: str) -> Union[Workload, None]:
         workload_type=workload_type,
         opportunistic_thread_count=opportunistic_cpus,
         duration_predictions=duration_predictions)
+
+
+def get_workload_from_kubernetes(identifier: str) -> Union[Workload, None]:
+
+    def __get_typed_pod_manager() -> PodManager:
+        return get_pod_manager()
+
+    pod_manager = __get_typed_pod_manager()
+    if pod_manager is None:
+        return None
+
+    pod = pod_manager.get_pod(identifier)
+    if pod is None:
+        return None
+
+    return get_workload_from_pod(pod)
 
 
 def get_burst_workloads(workloads):

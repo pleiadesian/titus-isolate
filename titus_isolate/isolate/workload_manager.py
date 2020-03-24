@@ -3,6 +3,8 @@ from threading import Lock
 import time
 from typing import List, Dict
 
+from kubernetes.client import V1Pod
+
 from titus_isolate import log
 
 from titus_isolate.allocate.allocate_request import AllocateRequest
@@ -30,7 +32,7 @@ from titus_isolate.model.processor.cpu import Cpu
 from titus_isolate.model.processor.utils import visualize_cpu_comparison
 from titus_isolate.model.workload import Workload
 from titus_isolate.numa.utils import update_numa_balancing
-from titus_isolate.utils import get_workload_monitor_manager, get_config_manager
+from titus_isolate.utils import get_workload_monitor_manager, get_config_manager, get_pod_manager
 
 
 class WorkloadManager(MetricsReporter):
@@ -54,6 +56,7 @@ class WorkloadManager(MetricsReporter):
         self.__cpu = cpu
         self.__cgroup_manager = cgroup_manager
         self.__wmm = get_workload_monitor_manager()
+        self.__pod_manager = get_pod_manager()
         self.__workloads = {}
         self.__last_response = None
 
@@ -202,6 +205,7 @@ class WorkloadManager(MetricsReporter):
             cpu=self.get_cpu_copy(),
             workload_id=workload_id,
             workloads=workload_map,
+            pods=self.__get_pods(workload_map),
             cpu_usage=pcp_usage.get(CPU_USAGE, {}),
             mem_usage=pcp_usage.get(MEM_USAGE, {}),
             net_recv_usage=pcp_usage.get(NET_RECV_USAGE, {}),
@@ -212,15 +216,27 @@ class WorkloadManager(MetricsReporter):
     def __get_rebalance_request(self):
         pcp_usage = self.__wmm.get_pcp_usage()
 
+        workloads = self.get_workload_map_copy()
+
         return AllocateRequest(
             cpu=self.get_cpu_copy(),
-            workloads=self.get_workload_map_copy(),
+            workloads=workloads,
+            pods=self.__get_pods(workloads),
             cpu_usage=pcp_usage.get(CPU_USAGE, {}),
             mem_usage=pcp_usage.get(MEM_USAGE, {}),
             net_recv_usage=pcp_usage.get(NET_RECV_USAGE, {}),
             net_trans_usage=pcp_usage.get(NET_TRANS_USAGE, {}),
             disk_usage=pcp_usage.get(DISK_USAGE, {}),
             metadata=self.__get_request_metadata("rebalance"))
+
+    def __get_pods(self, workload_map: Dict[str, Workload]) -> Dict[str, V1Pod]:
+        pods = {}
+        for w_id, w in workload_map.items():
+            pod = self.__pod_manager.get_pod(w_id)
+            if pod is not None:
+                pods[pod.metadata.name] = pod
+
+        return pods
 
     def get_workloads(self) -> List[Workload]:
         return list(self.__workloads.values())

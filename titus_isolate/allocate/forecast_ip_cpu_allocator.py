@@ -20,8 +20,7 @@ from titus_isolate.model.processor.cpu import Cpu
 from titus_isolate.model.utils import get_burst_workloads, release_all_threads
 from titus_isolate.model.utils import get_sorted_workloads
 from titus_isolate.monitor.free_thread_provider import FreeThreadProvider
-from titus_isolate.predict.cpu_usage_predictor import PredEnvironment
-from titus_isolate.predict.cpu_usage_predictor_manager import CpuUsagePredictorManager
+from titus_isolate.predict.resource_usage_predictor import ResourceUsagePredictor
 
 
 class CUVector:
@@ -41,9 +40,9 @@ class CUVector:
 class ForecastIPCpuAllocator(CpuAllocator):
 
     def __init__(self,
-                 cpu_usage_predictor_manager: CpuUsagePredictorManager,
                  config_manager: ConfigManager,
                  free_thread_provider: FreeThreadProvider):
+        self.__resource_usage_predictor = ResourceUsagePredictor()
         self.__reg = None
         self.__time_bound_call_count = 0
         self.__rebalance_failure_count = 0
@@ -56,7 +55,6 @@ class ForecastIPCpuAllocator(CpuAllocator):
         self.__solver_max_runtime_secs = config_manager.get_float(MAX_SOLVER_RUNTIME, DEFAULT_MAX_SOLVER_RUNTIME)
         self.__solver_name = config_manager.get_str(MIP_SOLVER, DEFAULT_MIP_SOLVER)
         self.__solver_mip_gap = config_manager.get_float(RELATIVE_MIP_GAP_STOP, DEFAULT_RELATIVE_MIP_GAP_STOP)
-        self.__cpu_usage_predictor_manager = cpu_usage_predictor_manager
         self.__config_manager = config_manager
         self.__free_thread_provider = free_thread_provider
         self.__cnt_rebalance_calls = 0
@@ -148,7 +146,6 @@ class ForecastIPCpuAllocator(CpuAllocator):
         cpu_usage_predictor = self.__get_cpu_usage_predictor()
 
         cm = self.__config_manager
-        pred_env = PredEnvironment(cm.get_region(), cm.get_environment(), dt.utcnow().hour)
 
         start_time = time.time()
         for w in workloads.values():  # TODO: batch the call
