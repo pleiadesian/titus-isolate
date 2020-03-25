@@ -77,7 +77,7 @@ def get_main_container(pod: V1Pod) -> Union[V1Container, None]:
     return None
 
 
-def get_job_descriptor(pod: V1Pod) -> Union[object, None]:
+def get_job_descriptor(pod: V1Pod) -> Union[dict, None]:
     metadata = pod.metadata
     annotations = metadata.annotations
 
@@ -87,33 +87,36 @@ def get_job_descriptor(pod: V1Pod) -> Union[object, None]:
     return decode_job_descriptor(annotations.get(JOB_DESCRIPTOR))
 
 
-def decode_job_descriptor(encoded_job_descriptor: str) -> object:
-    jd_bytes = base64.b64decode(encoded_job_descriptor, validate=True)
-    jd_bytes = gzip.decompress(jd_bytes)
-    return json.loads(jd_bytes.decode("utf-8"))
+def decode_job_descriptor(encoded_job_descriptor: str) -> Union[dict, None]:
+    try:
+        jd_bytes = base64.b64decode(encoded_job_descriptor, validate=True)
+        jd_bytes = gzip.decompress(jd_bytes)
+        return json.loads(jd_bytes.decode("utf-8"))
+    except:
+        return None
 
 
-def get_app_name(job_descriptor: object) -> str:
+def get_app_name(job_descriptor: dict) -> str:
     return job_descriptor[APP_NAME]
 
 
-def get_image(job_descriptor: object) -> str:
+def get_image(job_descriptor: dict) -> str:
     return job_descriptor[CONTAINER][IMAGE][NAME]
 
 
-def get_cmd(job_descriptor: object) -> str:
+def get_cmd(job_descriptor: dict) -> str:
     return ' '.join(job_descriptor[CONTAINER][COMMAND])
 
 
-def get_entrypoint(job_descriptor: object) -> str:
+def get_entrypoint(job_descriptor: dict) -> str:
     return ' '.join(job_descriptor[CONTAINER][ENTRYPOINT])
 
 
-def get_job_type(job_descriptor: object) -> str:
+def get_job_type(job_descriptor: dict) -> str:
     return job_descriptor[CONTAINER][IMAGE][NAME]
 
 
-def parse_kubernetes_value(val: str) -> float:
+def parse_kubernetes_value(val: str) -> str:
     return str(parse_quantity(val))
 
 
@@ -137,15 +140,22 @@ def get_workload_from_pod(pod: V1Pod) -> Workload:
     disk = parse_kubernetes_value(disk)
 
     # Job metadata
+    app_name = 'UNKNOWN_APP_NAME'
+    image = 'UNKNOWN_IMAGE'
+    command = 'UNKNOWN_CMD'
+    entrypoint = 'UNKNOWN_ENTRYPOINT'
+
     job_descriptor = get_job_descriptor(pod)
     log.debug("job_descriptor: %s", job_descriptor)
-    app_name = get_app_name(job_descriptor)
-    owner_email = metadata.annotations[OWNER_EMAIL]
-    image = get_image(job_descriptor)
-    command = get_cmd(job_descriptor)
-    entrypoint = get_entrypoint(job_descriptor)
-    job_type = metadata.annotations[WORKLOAD_JSON_JOB_TYPE_KEY]
 
+    if job_descriptor is not None:
+        app_name = get_app_name(job_descriptor)
+        image = get_image(job_descriptor)
+        command = get_cmd(job_descriptor)
+        entrypoint = get_entrypoint(job_descriptor)
+
+    job_type = metadata.annotations[WORKLOAD_JSON_JOB_TYPE_KEY]
+    owner_email = metadata.annotations[OWNER_EMAIL]
     workload_type_str = metadata.annotations.get(CPU_BURSTING)
     workload_type = STATIC
     if workload_type_str is not None and str(workload_type_str).lower() == "true":
