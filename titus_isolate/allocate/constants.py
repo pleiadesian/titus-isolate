@@ -9,6 +9,15 @@ METADATA = 'metadata'
 NET_RECV_USAGE = 'net_recv_usage'
 NET_TRANS_USAGE = 'net_trans_usage'
 DISK_USAGE = 'disk_usage'
+RESOURCE_USAGE = 'resource_usage'
+
+RESOURCE_USAGE_NAMES = [
+    CPU_USAGE,
+    MEM_USAGE,
+    NET_RECV_USAGE,
+    NET_TRANS_USAGE,
+    DISK_USAGE,
+]
 
 WORKLOAD_ALLOCATIONS = 'workload_allocations'
 WORKLOADS = 'workloads'

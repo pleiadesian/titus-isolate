@@ -2,13 +2,15 @@ import copy
 import json
 from typing import Dict, List
 
+from deprecated import deprecated
 from kubernetes.client import V1Pod
 
 from titus_isolate.allocate.constants import CPU, CPU_USAGE, WORKLOADS, METADATA, CPU_ARRAY, MEM_USAGE, NET_RECV_USAGE, \
-    NET_TRANS_USAGE, DISK_USAGE, PODS
+    NET_TRANS_USAGE, DISK_USAGE, PODS, RESOURCE_USAGE
 from titus_isolate.allocate.utils import parse_cpu, parse_workloads, parse_usage, parse_pods
 from titus_isolate.model.processor.cpu import Cpu
 from titus_isolate.model.workload import Workload
+from titus_isolate.monitor.resource_usage import GlobalResourceUsage, deserialize_global_resource_usage
 
 
 class AllocateRequest:
@@ -22,6 +24,7 @@ class AllocateRequest:
                  net_recv_usage: dict,
                  net_trans_usage: dict,
                  disk_usage: dict,
+                 resource_usage: GlobalResourceUsage,
                  metadata: dict):
         """
         A rebalance request encapsulates all information needed to rebalance the assignment of threads to workloads.
@@ -34,36 +37,46 @@ class AllocateRequest:
         self.__net_recv_usage = copy.deepcopy(net_recv_usage)
         self.__net_trans_usage = copy.deepcopy(net_trans_usage)
         self.__disk_usage = copy.deepcopy(disk_usage)
+        self.__resource_usage = copy.deepcopy(resource_usage)
         self.__metadata = copy.deepcopy(metadata)
 
-    def get_cpu(self):
+    def get_cpu(self) -> Cpu:
         return self.__cpu
 
-    def get_cpu_usage(self):
+    @deprecated
+    def get_cpu_usage(self) -> dict:
         return self.__cpu_usage
 
-    def get_mem_usage(self):
+    @deprecated
+    def get_mem_usage(self) -> dict:
         return self.__mem_usage
 
-    def get_net_recv_usage(self):
+    @deprecated
+    def get_net_recv_usage(self) -> dict:
         return self.__net_recv_usage
 
-    def get_net_trans_usage(self):
+    @deprecated
+    def get_net_trans_usage(self) -> dict:
         return self.__net_trans_usage
 
-    def get_disk_usage(self):
+    @deprecated
+    def get_disk_usage(self) -> dict:
         return self.__disk_usage
 
+    def get_resource_usage(self) -> GlobalResourceUsage:
+        return self.__resource_usage
+
+    @deprecated
     def get_workloads(self) -> Dict[str, Workload]:
         return self.__workloads
 
     def get_pods(self) -> Dict[str, V1Pod]:
         return self.__pods
 
-    def get_metadata(self):
+    def get_metadata(self) -> dict:
         return self.__metadata
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return {
             CPU: self.get_cpu().to_dict(),
             CPU_ARRAY: self.get_cpu().to_array(),
@@ -72,6 +85,7 @@ class AllocateRequest:
             NET_RECV_USAGE: self.__get_serializable_usage(self.get_net_recv_usage()),
             NET_TRANS_USAGE: self.__get_serializable_usage(self.get_net_trans_usage()),
             DISK_USAGE: self.__get_serializable_usage(self.get_disk_usage()),
+            RESOURCE_USAGE: self.__resource_usage.serialize(),
             WORKLOADS: self.__get_serializable_workloads(list(self.get_workloads().values())),
             PODS: self.__get_serializable_pods(list(self.get_pods().values())),
             METADATA: self.get_metadata()
@@ -110,6 +124,7 @@ def deserialize_allocate_request(serialized_request: dict) -> AllocateRequest:
     net_recv_usage = parse_usage(serialized_request.get(NET_RECV_USAGE, {}))
     net_trans_usage = parse_usage(serialized_request.get(NET_TRANS_USAGE, {}))
     disk_usage = parse_usage(serialized_request.get(DISK_USAGE, {}))
+    resource_usage = deserialize_global_resource_usage(serialized_request.get(RESOURCE_USAGE, {}))
     metadata = serialized_request[METADATA]
     return AllocateRequest(
         cpu=cpu,
@@ -120,4 +135,5 @@ def deserialize_allocate_request(serialized_request: dict) -> AllocateRequest:
         net_recv_usage=net_recv_usage,
         net_trans_usage=net_trans_usage,
         disk_usage=disk_usage,
+        resource_usage=resource_usage,
         metadata=metadata)

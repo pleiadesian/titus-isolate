@@ -120,6 +120,14 @@ def parse_kubernetes_value(val: str) -> str:
     return str(parse_quantity(val))
 
 
+def get_workload_map_from_pods(pods: List[V1Pod]) -> Dict[str, Workload]:
+    workload_map = {}
+    for p in pods:
+        workload_map[p.metadata.name] = get_workload_from_pod(p)
+
+    return workload_map
+
+
 def get_workload_from_pod(pod: V1Pod) -> Workload:
     metadata = pod.metadata
     main_container = get_main_container(pod)

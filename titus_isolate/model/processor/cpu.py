@@ -1,6 +1,6 @@
 from collections import defaultdict
 from functools import reduce
-from typing import List
+from typing import List, Dict
 
 from titus_isolate.model.processor import utils
 from titus_isolate.model.processor.core import Core
@@ -47,7 +47,7 @@ class Cpu:
         for t in self.get_threads():
             t.clear()
 
-    def get_workload_ids_to_thread_ids(self):
+    def get_workload_ids_to_thread_ids(self) -> Dict[str, List[int]]:
         res = defaultdict(list)
         for t in self.get_threads():
             if t.is_claimed():

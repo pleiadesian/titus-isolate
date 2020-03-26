@@ -60,6 +60,5 @@ def get_allocator(allocator_str, config_manager):
         return CPU_ALLOCATOR_NAME_TO_CLASS_MAP[allocator_str](free_thread_provider)
 
     return ForecastIPCpuAllocator(
-        cpu_usage_predictor_manager=None,
         config_manager=config_manager,
         free_thread_provider=free_thread_provider)

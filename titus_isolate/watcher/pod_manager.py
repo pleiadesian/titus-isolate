@@ -1,6 +1,6 @@
 import copy
 from threading import Thread, Lock
-from typing import Union
+from typing import Union, List
 
 from kubernetes import client, config, watch
 from kubernetes.client import V1Pod, V1ObjectMeta
@@ -44,6 +44,10 @@ class PodManager:
                 return None
 
             return copy.deepcopy(self.__pod_cache.get(pod_name))
+
+    def get_pods(self) -> List[V1Pod]:
+        with self.__lock:
+            return list(self.__pod_cache.values())
 
     def start(self):
         Thread(target=self.__watch).start()

@@ -1,7 +1,7 @@
 
 # https://container.forecast.{us-east-1/us-west-2/eu-west-1}.streaming{test/prod}.titus.netflix.net:7004/v1/containersForecast
 import json
-from typing import Union
+from typing import Union, Dict, List
 
 import requests
 from kubernetes.client import V1Pod
@@ -10,7 +10,9 @@ from titus_isolate import log
 from titus_isolate.allocate.constants import CPU_USAGE, MEM_USAGE, NET_RECV_USAGE, NET_TRANS_USAGE, DISK_USAGE
 from titus_isolate.config.config_manager import ConfigManager
 from titus_isolate.model.utils import get_job_descriptor, get_start_time, get_main_container_status, CPU
+from titus_isolate.monitor.resource_usage import GlobalResourceUsage
 from titus_isolate.monitor.workload_monitor_manager import WorkloadMonitorManager
+from titus_isolate.predict.resource_usage_prediction import ResourceUsagePredictions, ResourceUsagePrediction
 from titus_isolate.utils import get_config_manager, get_pod_manager, get_workload_monitor_manager, \
     managers_are_initialized
 
@@ -47,56 +49,46 @@ def get_predictions(client_cert_path: str, client_key_path: str, url: str, body:
     return resp_json
 
 
+def get_first_window_cpu_prediction(prediction: ResourceUsagePrediction):
+    cpu_predictions = prediction.resource_type_predictions[CPU]
+    p95_cpu_predictions = cpu_predictions.predictions['p95']
+    return p95_cpu_predictions[0]
+
+
+def get_first_window_cpu_predictions(predictions: ResourceUsagePredictions):
+    simple_predictions = {}
+    for w_id, prediction in predictions.predictions.items():
+        simple_predictions[w_id] = get_first_window_cpu_prediction(prediction)
+
+
 class ResourceUsagePredictor:
 
-    def __translate_usage(self, pcp_usage: dict, workload_id: str) -> dict:
-        # {
-        #     'cpu_usage': {
-        #         'daf6f318-a270-432d-b27e-4c7fe559755a': ['0.0', ..., '0.0]
-        #     },
-        #     'mem_usage': {
-        #         'daf6f318-a270-432d-b27e-4c7fe559755a': ['3186688.0', ..., '3186688.0']
-        #     },
-        #     'net_recv_usage': {
-        #         'daf6f318-a270-432d-b27e-4c7fe559755a': ['178.867', ..., '181.767']
-        #     },
-        #     'net_trans_usage': {
-        #         'daf6f318-a270-432d-b27e-4c7fe559755a': ['317.05', ..., '317.067']
-        #     },
-        #     'disk_usage': {
-        #         'daf6f318-a270-432d-b27e-4c7fe559755a': ['36864.0', ..., '36864.0']
-        #     }
-        # }
+    @staticmethod
+    def __translate_usage(usages: Dict[str, List[float]]) -> dict:
         out_usage = {}
-
-        for k in RESOURCE_HEADING_MAPPINGS.keys():
-            res_usage = pcp_usage.get(k, None)
-            if res_usage is None:
-                continue
-
-            workload_res_usage = res_usage.get(workload_id, None)
-            if workload_res_usage is None:
-                continue
-
-            out_usage[RESOURCE_HEADING_MAPPINGS[k]] = workload_res_usage[:60]
+        for resource_name, values in usages.items():
+            out_usage[RESOURCE_HEADING_MAPPINGS[resource_name]] = values[:60]
 
         return out_usage
 
-    def __get_body(self, pod: V1Pod, wmm: WorkloadMonitorManager) -> Union[dict, None]:
+    def __get_job_body(self, pod: V1Pod, resource_usage: GlobalResourceUsage):
         return {
-            "jobs": [
-                {
-                    "job_id": pod.metadata.name,
-                    "job_descriptor": get_job_descriptor(pod),
-                    "task_data": {
-                        "started_ts_ms": str(get_start_time(pod)),
-                        "past_usage": self.__translate_usage(wmm.get_pcp_usage(), pod.metadata.name)
-                    }
-                }
-            ]
+            "job_id": pod.metadata.name,
+            "job_descriptor": get_job_descriptor(pod),
+            "task_data": {
+                "started_ts_ms": str(get_start_time(pod)),
+                "past_usage": self.__translate_usage(
+                    resource_usage.get_all_usage_for_workload(pod.metadata.name))
+            }
         }
 
-    def is_running(self, pod: V1Pod) -> bool:
+    def __get_body(self, pods: List[V1Pod], resource_usage: GlobalResourceUsage) -> Union[dict, None]:
+        return {
+            "jobs": [self.__get_job_body(p, resource_usage) for p in pods]
+        }
+
+    @staticmethod
+    def is_running(pod: V1Pod) -> bool:
         if pod.status.phase != "Running":
             log.info("Pod phase is %s, not Running", pod.status.phase)
             return False
@@ -113,26 +105,27 @@ class ResourceUsagePredictor:
 
         return True
 
-    def get_predictions(self, workload_id: str) -> Union[dict, None]:
-        if not managers_are_initialized():
-            log.warning("Managers are not yet initialized")
-            return None
+    def get_predictions(self,
+                        pods: List[V1Pod],
+                        resource_usage: GlobalResourceUsage) -> Union[ResourceUsagePredictions, None]:
 
-        pod = get_pod_manager().get_pod(workload_id)
-        if pod is None:
-            log.warning("Pod not found")
-            return None
-
-        if not self.is_running(pod):
-            log.info("Pod is not yet running")
-            return None
+        running_pods = []
+        for p in pods:
+            if p.metadata.name in resource_usage.get_workload_ids():
+                running_pods.append(p)
+            else:
+                log.info("Pod is not yet running: %s", p.metadata.name)
 
         client_crt = '/run/metatron/certificates/client.crt'
         client_key = '/run/metatron/certificates/client.key'
         url = get_url(get_config_manager())
-        body = self.__get_body(pod, get_workload_monitor_manager())
+        body = self.__get_body(running_pods, resource_usage)
         if body is None:
             log.info("Unable to generate a prediction request body")
             return None
 
-        return get_predictions(client_crt, client_key, url, body)
+        predictions = get_predictions(client_crt, client_key, url, body)
+        if predictions is None:
+            return None
+
+        return ResourceUsagePredictions(predictions)

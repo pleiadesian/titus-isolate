@@ -31,10 +31,12 @@ from titus_isolate.model.opportunistic_resource_capacity import OpportunisticRes
 from titus_isolate.model.opportunistic_resource_spec import OpportunisticResourceSpec
 from titus_isolate.model.opportunistic_resource_window import OpportunisticResourceWindow
 from titus_isolate.model.workload import get_duration
+from titus_isolate.monitor.resource_usage import GlobalResourceUsage
 
-from titus_isolate.predict.resource_usage_prediction import ResourceUsagePredictions, CPU
-from titus_isolate.predict.resource_usage_predictor import ResourceUsagePredictor
-from titus_isolate.utils import get_config_manager, get_workload_monitor_manager
+from titus_isolate.predict.resource_usage_prediction import ResourceUsagePredictions, CPU, ResourceUsagePrediction
+from titus_isolate.predict.resource_usage_predictor import ResourceUsagePredictor, get_first_window_cpu_prediction
+from titus_isolate.utils import get_config_manager, get_workload_monitor_manager, managers_are_initialized, \
+    get_pod_manager
 
 CRD_VERSION = 'apiextensions.k8s.io/v1beta1'
 CRD_KIND = 'CustomResourceDefinition'
@@ -103,6 +105,10 @@ class OversubscribeEventHandler(EventHandler, MetricsReporter):
 
     def __handle(self, event):
         try:
+            if not managers_are_initialized():
+                log.warning("Managers are not yet initialized")
+                return None
+
             if not self.__relevant(event):
                 return
 
@@ -123,6 +129,13 @@ class OversubscribeEventHandler(EventHandler, MetricsReporter):
             start = datetime.utcnow()
             end = start + timedelta(minutes=self.__config_manager.get_int(OVERSUBSCRIBE_WINDOW_SIZE_MINUTES_KEY,
                                                                           DEFAULT_OVERSUBSCRIBE_WINDOW_SIZE_MINUTES))
+
+            # Resource usage prediction
+            resource_usage = GlobalResourceUsage(self.__workload_monitor_manager.get_pcp_usage())
+            resource_usage_predictions = self.__resource_usage_predictor.get_predictions(
+                get_pod_manager().get_pods(),
+                resource_usage)
+
             for workload in self.workload_manager.get_workloads():
                 log.info('workload:%s job_type:%s cpu:%d', workload.get_app_name(), workload.get_job_type(),
                           workload.get_thread_count())
@@ -130,18 +143,16 @@ class OversubscribeEventHandler(EventHandler, MetricsReporter):
                 if not self.__is_long_enough(workload):
                     continue
 
-                # Get prediction
-                resource_usage_prediction = self.__resource_usage_predictor.get_predictions(workload.get_id())
-                log.debug("resource_usage_prediction: %s", resource_usage_prediction)
+                pod = get_pod_manager().get_pod(workload.get_id())
+                if pod is None:
+                    log.warning("Pod not found")
+                    continue
 
+                resource_usage_prediction = resource_usage_predictions.predictions.get(workload.get_id(), None)
                 if resource_usage_prediction is None:
                     continue
 
-                objectified_prediction = ResourceUsagePredictions(resource_usage_prediction)
-                workload_predictions = objectified_prediction.predictions[workload.get_id()]
-                cpu_predictions = workload_predictions.resource_type_predictions[CPU]
-                p95_cpu_predictions = cpu_predictions.predictions['p95']
-                first_window_pred_cpus = p95_cpu_predictions[0]
+                first_window_pred_cpus = get_first_window_cpu_prediction(resource_usage_prediction)
 
                 # Process prediction
                 pred_usage = first_window_pred_cpus / workload.get_thread_count()

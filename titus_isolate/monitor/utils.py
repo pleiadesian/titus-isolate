@@ -164,7 +164,7 @@ def get_pcp_archive_path() -> str:
     return "/var/log/pcp/pmlogger/{}/".format(socket.gethostname())
 
 
-def resource_usages_to_dict(usages: List[ResourceUsage]) -> dict:
+def resource_usages_to_dict(usages: List[ResourceUsage]) -> Dict[str, Dict[str, List[float]]]:
     d = {}
     for u in usages:
         if u.resource_name not in d:

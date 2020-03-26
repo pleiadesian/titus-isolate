@@ -9,3 +9,4 @@ titus-optimize==0.6.0
 netflix-spectator-py
 systemd
 kubernetes==11.0.0
+Deprecrated

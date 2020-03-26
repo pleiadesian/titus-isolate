@@ -1,7 +1,8 @@
-from datetime import datetime as dt
 from collections import defaultdict
 import time
+from typing import Dict, List, Optional
 
+from kubernetes.client import V1Pod
 from titus_optimize.compute_v3 import IPSolverParameters, IP_SOLUTION_TIME_BOUND, PlacementSolver
 
 from titus_isolate import log
@@ -17,18 +18,22 @@ from titus_isolate.config.constants import ALPHA_NU, DEFAULT_ALPHA_NU, ALPHA_LLC
     RELATIVE_MIP_GAP_STOP, DEFAULT_RELATIVE_MIP_GAP_STOP, MIP_SOLVER, DEFAULT_MIP_SOLVER
 from titus_isolate.metrics.constants import IP_ALLOCATOR_TIMEBOUND_COUNT, FORECAST_REBALANCE_FAILURE_COUNT
 from titus_isolate.model.processor.cpu import Cpu
-from titus_isolate.model.utils import get_burst_workloads, release_all_threads
+from titus_isolate.model.utils import get_burst_workloads, release_all_threads, get_workload_map_from_pods
 from titus_isolate.model.utils import get_sorted_workloads
+from titus_isolate.model.workload import Workload
 from titus_isolate.monitor.free_thread_provider import FreeThreadProvider
-from titus_isolate.predict.resource_usage_predictor import ResourceUsagePredictor
+from titus_isolate.monitor.resource_usage import GlobalResourceUsage
+from titus_isolate.predict.resource_usage_prediction import ResourceUsagePredictions
+from titus_isolate.predict.resource_usage_predictor import ResourceUsagePredictor, get_first_window_cpu_prediction, \
+    get_first_window_cpu_predictions
 
 
 class CUVector:
     def __init__(
             self,
-            requested_cus,
-            curr_placement_vectors,
-            ordered_workload_ids):
+            requested_cus: List[int],
+            curr_placement_vectors: Optional[List[List[int]]],
+            ordered_workload_ids: List[str]):
         self.requested_cus = requested_cus
         self.curr_placement_vectors_static = curr_placement_vectors
         self.ordered_workload_ids = ordered_workload_ids
@@ -63,13 +68,14 @@ class ForecastIPCpuAllocator(CpuAllocator):
     def assign_threads(self, request: AllocateThreadsRequest) -> AllocateResponse:
         self.__call_meta = {}
         cpu = request.get_cpu()
-        cpu_usage = request.get_cpu_usage()
-        workloads = request.get_workloads()
         workload_id = request.get_workload_id()
+        pods = request.get_pods()
+        workloads = get_workload_map_from_pods(list(pods.values()))
         curr_ids_per_workload = cpu.get_workload_ids_to_thread_ids()
+        resource_usage = request.get_resource_usage()
 
         return AllocateResponse(
-            self.__compute_allocation(cpu, workload_id, workloads, curr_ids_per_workload, cpu_usage, True),
+            self.__compute_allocation(cpu, workload_id, pods, curr_ids_per_workload, resource_usage, True),
             get_workload_allocations(cpu, list(workloads.values())),
             self.get_name(),
             self.__call_meta)
@@ -77,16 +83,17 @@ class ForecastIPCpuAllocator(CpuAllocator):
     def free_threads(self, request: AllocateThreadsRequest) -> AllocateResponse:
         self.__call_meta = {}
         cpu = request.get_cpu()
-        cpu_usage = request.get_cpu_usage()
-        workloads = request.get_workloads()
+        pods = request.get_pods()
+        workloads = get_workload_map_from_pods(list(pods.values()))
         workload_id = request.get_workload_id()
         curr_ids_per_workload = cpu.get_workload_ids_to_thread_ids()
+        resource_usage = request.get_resource_usage()
 
         if workload_id not in curr_ids_per_workload:
             raise Exception("workload_id=`%s` is not placed on the instance. Cannot free it." % (workload_id,))
 
         return AllocateResponse(
-            self.__compute_allocation(cpu, workload_id, workloads, curr_ids_per_workload, cpu_usage, False),
+            self.__compute_allocation(cpu, workload_id, pods, curr_ids_per_workload, resource_usage, False),
             get_workload_allocations(cpu, list(workloads.values())),
             self.get_name(),
             self.__call_meta)
@@ -94,16 +101,17 @@ class ForecastIPCpuAllocator(CpuAllocator):
     def rebalance(self, request: AllocateRequest) -> AllocateResponse:
         self.__call_meta = {}
         cpu = request.get_cpu()
-        cpu_usage = request.get_cpu_usage()
-        workloads = request.get_workloads()
+        pods = request.get_pods()
+        workloads = get_workload_map_from_pods(list(pods.values()))
+        resource_usage = request.get_resource_usage()
         self.__cnt_rebalance_calls += 1
 
-        if len(workloads) == 0:
+        if len(pods) == 0:
             log.warning("Ignoring rebalance of empty CPU.")
             self.__call_meta['rebalance_empty'] = 1
             return AllocateResponse(
                 cpu,
-                get_workload_allocations(cpu, list(workloads.values())),
+                get_workload_allocations(cpu, []),
                 self.get_name(),
                 self.__call_meta)
 
@@ -111,13 +119,21 @@ class ForecastIPCpuAllocator(CpuAllocator):
         curr_ids_per_workload = cpu.get_workload_ids_to_thread_ids()
 
         return AllocateResponse(
-            self.__compute_allocation(cpu, None, workloads, curr_ids_per_workload, cpu_usage, None),
+            self.__compute_allocation(cpu, None, pods, curr_ids_per_workload, resource_usage, False),
             get_workload_allocations(cpu, list(workloads.values())),
             self.get_name(),
             self.__call_meta)
 
-    def __compute_allocation(self, cpu, workload_id, workloads, curr_ids_per_workload, cpu_usage, is_add):
-        predicted_usage = self.__predict_usage(workloads, cpu_usage)
+    def __compute_allocation(self,
+                             cpu: Cpu,
+                             workload_id: Optional[str],
+                             pods: Dict[str, V1Pod],
+                             curr_ids_per_workload: Dict[str, List[int]],
+                             resource_usage: GlobalResourceUsage,
+                             is_add: bool):
+
+        predicted_usage = self.__predict_usage(pods, resource_usage)
+        workloads = get_workload_map_from_pods(list(pods.values()))
         cpu = self.__place_threads(cpu, workload_id, workloads, curr_ids_per_workload, predicted_usage, is_add)
 
         # Burst workload computation
@@ -127,7 +143,8 @@ class ForecastIPCpuAllocator(CpuAllocator):
 
         # Claim all free threads for burst workloads
         burst_workload_ids = [w.get_id() for w in burst_workloads]
-        free_threads = self.__free_thread_provider.get_free_threads(cpu, workloads, predicted_usage)
+        free_threads = self.__free_thread_provider.get_free_threads(
+            cpu, workloads, get_first_window_cpu_predictions(predicted_usage))
         for t in free_threads:
             for w_id in burst_workload_ids:
                 t.claim(w_id)
@@ -138,32 +155,27 @@ class ForecastIPCpuAllocator(CpuAllocator):
     def get_name(self) -> str:
         return self.__class__.__name__
 
-    def __get_cpu_usage_predictor(self):
-        return self.__cpu_usage_predictor_manager.get_predictor()
-
-    def __predict_usage(self, workloads, cpu_usage):
-        res = {}
-        cpu_usage_predictor = self.__get_cpu_usage_predictor()
-
-        cm = self.__config_manager
-
+    def __predict_usage(self, pods: Dict[str, V1Pod], resource_usage: GlobalResourceUsage) -> ResourceUsagePredictions:
         start_time = time.time()
-        for w in workloads.values():  # TODO: batch the call
-            pred = cpu_usage_predictor.predict(w, cpu_usage.get(w.get_id(), None), pred_env)
-            res[w.get_id()] = pred
+        preds = self.__resource_usage_predictor.get_predictions(list(pods.values()), resource_usage)
         stop_time = time.time()
+
         self.__call_meta['pred_cpu_usage_dur_secs'] = stop_time - start_time
-        try:
-            self.__call_meta['pred_cpu_usage_model_id'] = cpu_usage_predictor.get_model().meta_data['model_training_titus_task_id']
-        except:
-            self.__call_meta['pred_cpu_usage_model_id'] = 'unknown'
+        self.__call_meta['pred_cpu_usage_model_id'] = preds.model_instance_id
 
-        log.debug("Usage prediction per workload: " + str(res))
-        if len(res) > 0:
-            self.__call_meta['pred_cpu_usage'] = dict(res)
-        return res
+        log.debug("Usage prediction per workload: %s", preds.raw)
+        if len(preds.predictions) > 0:
+            self.__call_meta['pred_cpu_usage'] = preds.raw
 
-    def __place_threads(self, cpu, workload_id, workloads, curr_ids_per_workload, predicted_cpu_usage, is_add) -> Cpu:
+        return preds
+
+    def __place_threads(self,
+                        cpu: Cpu,
+                        workload_id: str,
+                        workloads: Dict[str, Workload],
+                        curr_ids_per_workload: Dict[str, List[int]],
+                        predicted_usage: ResourceUsagePredictions,
+                        is_add) -> Cpu:
         # this will predict against the new or deleted workload too if it's static
         cu_vector = self.__get_requested_cu_vector(cpu, workload_id, workloads, curr_ids_per_workload, is_add)
 
@@ -171,18 +183,22 @@ class ForecastIPCpuAllocator(CpuAllocator):
             cpu,
             cu_vector.requested_cus,
             cu_vector.curr_placement_vectors_static,
-            predicted_cpu_usage,
+            predicted_usage,
             workloads,
             cu_vector.ordered_workload_ids)
 
         return cpu
 
     @staticmethod
-    def __get_requested_cu_vector(cpu, workload_id, workloads, curr_ids_per_workload, is_add) -> CUVector:
+    def __get_requested_cu_vector(cpu: Cpu,
+                                  workload_id: str,
+                                  workloads: Dict[str, Workload],
+                                  curr_ids_per_workload: Dict[str, List[int]],
+                                  is_add: bool) -> CUVector:
         n_compute_units = len(cpu.get_threads())
         tid_2order = cpu.get_natural_indexing_2_original_indexing()
 
-        ordered_workload_ids = [w.get_id() for w in get_sorted_workloads(workloads.values())]
+        ordered_workload_ids = [w.get_id() for w in get_sorted_workloads(list(workloads.values()))]
 
         changed_workload = workloads.get(workload_id, None)
 
@@ -224,16 +240,21 @@ class ForecastIPCpuAllocator(CpuAllocator):
 
     def __compute_apply_placement(
             self,
-            cpu,
-            requested_cus,
-            curr_placement_vectors_static,
-            predicted_usage_static,
-            workloads,
-            ordered_workload_ids_static):
+            cpu: Cpu,
+            requested_cus: List[int],
+            curr_placement_vectors_static: Optional[List[List[int]]],
+            usage_predictions: ResourceUsagePredictions,
+            workloads: Dict[str, Workload],
+            ordered_workload_ids_static: List[str]):
 
-        predicted_usage_static_vector = None
-        if len(predicted_usage_static) > 0:
-            predicted_usage_static_vector = [predicted_usage_static[w_id] for w_id in ordered_workload_ids_static]
+        predicted_usage_static_vector = []
+        for w_id in ordered_workload_ids_static:
+            usage_prediction = usage_predictions.predictions.get(w_id, None)
+            if usage_prediction is not None:
+                predicted_usage_static_vector.append(get_first_window_cpu_prediction(usage_prediction))
+
+        if len(predicted_usage_static_vector) == 0:
+            predicted_usage_static_vector = None
 
         new_placement_vectors = self.__compute_new_placement(
             cpu,

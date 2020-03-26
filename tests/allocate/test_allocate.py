@@ -1,5 +1,4 @@
 import logging
-import numpy as np
 import unittest
 import uuid
 
@@ -16,9 +15,7 @@ from titus_isolate.config.constants import BURST_CORE_COLLOC_USAGE_THRESH
 from titus_isolate.event.constants import STATIC
 from titus_isolate.model.processor.config import get_cpu
 from titus_isolate.model.processor.utils import DEFAULT_TOTAL_THREAD_COUNT
-from titus_isolate.model.workload import Workload
 from titus_isolate.monitor.oversubscribe_free_thread_provider import OversubscribeFreeThreadProvider
-from titus_isolate.predict.cpu_usage_predictor import PredEnvironment
 from titus_isolate.utils import set_workload_monitor_manager
 
 config_logs(logging.INFO)
@@ -30,31 +27,6 @@ class TestPredictor(object):
         self.meta_data = {'model_training_titus_task_id': '123'}
 
 
-class TestCpuUsagePredictor:
-
-    def __init__(self, constant_percent_busy: float = 100):
-        self.__constant_percent_busy = constant_percent_busy
-        self.__model = TestPredictor()
-
-    def predict(self, workload: Workload, cpu_usage_last_hour: np.array, pred_env: PredEnvironment) -> float:
-        return workload.get_thread_count() * self.__constant_percent_busy / 100
-
-    def get_model(self):
-        return self.__model
-
-
-class TestCpuUsagePredictorManager:
-
-    def __init__(self, predictor=TestCpuUsagePredictor()):
-        self.__predictor = predictor
-
-    def get_predictor(self):
-        return self.__predictor
-
-    def set_predictor(self, predictor):
-        self.__predictor = predictor
-
-
 class TestWorkloadMonitorManager:
 
     @staticmethod
@@ -63,7 +35,6 @@ class TestWorkloadMonitorManager:
 
 
 forecast_ip_alloc_simple = ForecastIPCpuAllocator(
-    TestCpuUsagePredictorManager(),
     ConfigManager(TestPropertyProvider({})),
     OversubscribeFreeThreadProvider(0.1))
 
@@ -471,24 +442,23 @@ class TestCpu(unittest.TestCase):
         self.assertEqual(original_burst_claim_sz, len(cpu.get_claimed_threads()))
 
     def test_forecast_ip_burst_pool_with_usage(self):
-        class UsagePredictorWithBurst:
-            def __init__(self):
-                self.__model = TestPredictor()
+        # class UsagePredictorWithBurst:
+        #     def __init__(self):
+        #         self.__model = TestPredictor()
 
-            def predict(self, workload: Workload, cpu_usage_last_hour: np.array, pred_env: PredEnvironment) -> float:
-                if workload.get_id() == 'static_a':
-                    return workload.get_thread_count() * 0.8
-                elif workload.get_id() == 'static_b':
-                    return workload.get_thread_count() * 0.01
-                elif workload.get_id() == 'burst_c':
-                    return workload.get_thread_count() * 0.9
+        #     def predict(self, workload: Workload, cpu_usage_last_hour: np.array, pred_env: PredEnvironment) -> float:
+        #         if workload.get_id() == 'static_a':
+        #             return workload.get_thread_count() * 0.8
+        #         elif workload.get_id() == 'static_b':
+        #             return workload.get_thread_count() * 0.01
+        #         elif workload.get_id() == 'burst_c':
+        #             return workload.get_thread_count() * 0.9
 
-            def get_model(self):
-                return self.__model
+        #     def get_model(self):
+        #         return self.__model
 
-        upm = TestCpuUsagePredictorManager(UsagePredictorWithBurst())
         cm = ConfigManager(TestPropertyProvider({BURST_CORE_COLLOC_USAGE_THRESH: 0.9}))
-        allocator = ForecastIPCpuAllocator(upm, cm, OversubscribeFreeThreadProvider(0.1))
+        allocator = ForecastIPCpuAllocator(cm, OversubscribeFreeThreadProvider(0.1))
 
         cpu = get_cpu(package_count=2, cores_per_package=16)
         w_a = get_test_workload("static_a", 14, STATIC)
@@ -527,7 +497,6 @@ class TestCpu(unittest.TestCase):
 
     def test_forecast_threshold_no_usage(self):
         allocator = ForecastIPCpuAllocator(
-            TestCpuUsagePredictorManager(),
             ConfigManager(TestPropertyProvider({})),
             OversubscribeFreeThreadProvider(0.1))
 
@@ -555,7 +524,6 @@ class TestCpu(unittest.TestCase):
 
     def test_forecast_threshold_usage(self):
         allocator = ForecastIPCpuAllocator(
-            TestCpuUsagePredictorManager(TestCpuUsagePredictor(10)),
             ConfigManager(TestPropertyProvider({})),
             OversubscribeFreeThreadProvider(0.05))
 

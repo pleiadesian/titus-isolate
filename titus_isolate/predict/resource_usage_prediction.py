@@ -71,6 +71,7 @@ class ResourceUsagePrediction:
 class ResourceUsagePredictions:
 
     def __init__(self, raw: dict):
+        self.raw = raw
         self.model_version = raw.get(MODEL_VERSION, "UNKNOWN_MODEL_VERSION")
         self.model_instance_id = raw.get(MODEL_INSTANCE_ID, "UNKNOWN_MODEL_INSTANCE_ID")
         self.prediction_ts_ms = int(raw.get(PREDICTION_TS_MS, '0'))

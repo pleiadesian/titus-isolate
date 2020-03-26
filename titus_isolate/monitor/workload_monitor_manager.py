@@ -1,4 +1,5 @@
 from threading import Lock
+from typing import List, Dict
 
 from titus_isolate import log
 from titus_isolate.allocate.constants import CPU_USAGE
@@ -41,7 +42,16 @@ class WorkloadMonitorManager(MetricsReporter):
             sample_interval_sec=sample_interval,
             query_timeout_sec=metrics_query_timeout_sec)
 
-    def get_pcp_usage(self) -> dict:
+    def get_pcp_usage(self) -> Dict[str, Dict[str, List[float]]]:
+        """
+        {
+            <resource_name>: {
+                <workload_id>: [<float>, <float>, ..., <float>],
+                ...
+            },
+            ...
+        }
+        """
         return resource_usages_to_dict(self.__pcp_usage_provider.get_resource_usages())
 
     def set_registry(self, registry, tags):
