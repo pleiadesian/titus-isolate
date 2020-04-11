@@ -23,7 +23,7 @@ class ConfigManager:
         return int(self.get_str(key, default))
 
     def get_bool(self, key, default=None):
-        return bool(self.get_str(key, default))
+        return bool(int(self.get_str(key, default)))
 
     @lru_cache(maxsize=None)
     def get_cached_str(self, key, default=None):

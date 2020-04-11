@@ -11,6 +11,7 @@ from titus_isolate import log
 from titus_isolate.api.testing import is_testing
 from titus_isolate.cgroup.file_cgroup_manager import FileCgroupManager
 from titus_isolate.config.config_manager import ConfigManager
+from titus_isolate.config.env_property_provider import EnvPropertyProvider
 from titus_isolate.config.constants import RESTART_PROPERTIES, DEFAULT_HEALTH_CHECK_FREQUENCY, \
     DEFAULT_MAX_TIME_SINCE_LAST_SUCCESSFUL_EVENT, MAX_TIME_SINCE_LAST_SUCCESSFUL_EVENT_KEY, HEALTH_CHECK_FREQUENCY_KEY
 from titus_isolate.config.restart_property_watcher import RestartPropertyWatcher
@@ -39,7 +40,7 @@ from titus_isolate.real_exit_handler import RealExitHandler
 from titus_isolate.utils import get_config_manager, get_workload_manager, \
     set_event_log_manager, start_periodic_scheduling, set_cpu_usage_predictor_manager, \
     set_workload_monitor_manager, set_workload_manager, set_event_manager, is_kubernetes, get_event_manager, \
-    set_pod_manager
+    set_pod_manager, set_config_manager
 
 app = Flask(__name__)
 
@@ -159,6 +160,7 @@ def init():
 
 
 if __name__ != '__main__' and not is_testing():
+    set_config_manager(ConfigManager(EnvPropertyProvider))
     log.info("Configuring logging...")
     gunicorn_logger = logging.getLogger('gunicorn.error')
     app.logger.handlers = gunicorn_logger.handlers

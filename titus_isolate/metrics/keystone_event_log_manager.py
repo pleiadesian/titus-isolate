@@ -70,5 +70,5 @@ class KeystoneEventLogManager(EventLogManager):
         format_str = config_manager.get_str(EVENT_LOG_FORMAT_STR)
         stream = 'titus_isolate'
 
-        self.__address = format_str.format(region, env, stream)
+        self.__address = '' #format_str.format(region, env, stream)
         log.info("Set keystone address to: {}".format(self.__address))
