@@ -30,7 +30,7 @@ from titus_isolate.isolate.reconciler import Reconciler
 from titus_isolate.isolate.utils import get_fallback_allocator
 from titus_isolate.isolate.workload_manager import WorkloadManager
 from titus_isolate.metrics.constants import ISOLATE_LATENCY_KEY
-from titus_isolate.metrics.keystone_event_log_manager import KeystoneEventLogManager
+from titus_isolate.metrics.local_event_log_manager import LocalEventLogManager
 from titus_isolate.metrics.metrics_manager import MetricsManager, registry
 from titus_isolate.model.processor.config import get_cpu_from_env
 from titus_isolate.monitor.workload_monitor_manager import WorkloadMonitorManager
@@ -178,7 +178,7 @@ if __name__ != '__main__' and not is_testing():
         set_pod_manager(pod_manager)
 
     log.info("Setting event log manager...")
-    event_log_manager = KeystoneEventLogManager()
+    event_log_manager = LocalEventLogManager()
     set_event_log_manager(event_log_manager)
 
     log.info("Watching property changes for restart...")
