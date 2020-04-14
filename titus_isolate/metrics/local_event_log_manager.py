@@ -4,14 +4,11 @@ from queue import Queue
 from threading import Thread
 
 from titus_isolate import log
-from titus_isolate.config.constants import EVENT_LOG_FORMAT_STR
 from titus_isolate.metrics.constants import EVENT_LOG_SUCCESS, EVENT_LOG_RETRY, EVENT_LOG_FAILURE
-from titus_isolate.metrics.event_log import send_event_msg, get_event_msg
 from titus_isolate.metrics.event_log_manager import EventLogManager
-from titus_isolate.utils import get_config_manager
 
 
-class KeystoneEventLogManager(EventLogManager):
+class LocalEventLogManager(EventLogManager):
 
     def __init__(self):
         self.__set_address()
@@ -32,8 +29,7 @@ class KeystoneEventLogManager(EventLogManager):
                 "uuid": str(uuid.uuid4()),
                 "payload": payload
             }
-            msg = get_event_msg(event)
-            self.__q.put_nowait(msg)
+            self.__q.put_nowait(event)
         except:
             self.__failed_msg_count += 1
             log.exception("Failed to report event for payload: {}".format(payload))
@@ -48,27 +44,9 @@ class KeystoneEventLogManager(EventLogManager):
 
     def __process_events(self):
         while True:
-            try:
-                msg = self.__q.get()
-                log.debug("Sending event log message: {}".format(msg))
-                response = send_event_msg(msg, self.__address)
-
-                if response.status_code != 200:
-                    log.error("Re-enqueuing failed event log message: {}".format(response.content))
-                    self.__retry_msg_count += 1
-                    self.__q.put_nowait(msg)
-                else:
-                    self.__succeeded_msg_count += 1
-            except:
-                self.__failed_msg_count += 1
-                log.exception("Failed to process event log message.")
+            msg = self.__q.get()
+            log.debug("Sending event log message: {}".format(msg))
 
     def __set_address(self):
-        config_manager = get_config_manager()
-        region = config_manager.get_region()
-        env = config_manager.get_environment()
-        format_str = config_manager.get_str(EVENT_LOG_FORMAT_STR)
-        stream = 'titus_isolate'
-
-        self.__address = format_str.format(region, env, stream)
-        log.info("Set keystone address to: {}".format(self.__address))
+        self.__address = ''
+        log.info("Set keystone address to: None")
