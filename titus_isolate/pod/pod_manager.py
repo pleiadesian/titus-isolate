@@ -7,6 +7,7 @@ from kubernetes.client import V1Pod, V1ObjectMeta
 
 from titus_isolate import log
 from titus_isolate.utils import get_config_manager
+from titus_isolate.event.utils import get_container_name
 
 config_file_path = '/run/kubernetes/config'
 
@@ -87,19 +88,19 @@ class PodManager:
             handlers[event_type](event)
 
     def __add_pod(self, event):
-        pod_name = get_pod_name(event)
+        pod_name = get_container_name(event)
         log.info("Add pod event: %s", pod_name)
         self.__store_pod(event)
 
     def __modify_pod(self, event):
-        pod_name = get_pod_name(event)
+        pod_name = get_container_name(event)
         log.info("Modify pod event: %s", pod_name)
         self.__store_pod(event)
 
     def __store_pod(self, event):
-        self.__pod_cache[get_pod_name(event)] = get_pod_object(event)
+        self.__pod_cache[get_container_name(event)] = get_pod_object(event)
 
     def __delete_pod(self, event):
-        pod_name = get_pod_name(event)
+        pod_name = get_container_name(event)
         log.info("Delete pod event: %s", pod_name)
         self.__pod_cache.pop(pod_name, None)
