@@ -193,7 +193,6 @@ if __name__ != '__main__' and not is_testing():
 
     # Start the cpu usage predictor manager
     log.info("Setting up the cpu usage predictor manager...")
-    # set_cpu_usage_predictor_manager(ConfigurableCpuUsagePredictorManager())
 
     # Start performance monitoring
     log.info("Starting performance monitoring...")

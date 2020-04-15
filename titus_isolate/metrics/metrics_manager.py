@@ -49,7 +49,7 @@ class MetricsManager:
             allocator_name = wm.get_allocator_name()
 
         tags[CPU_ALLOCATOR] = allocator_name
-        tags[CELL] = get_cell_name()
+        # tags[CELL] = get_cell_name()
 
         return tags
 
