@@ -41,8 +41,11 @@ class PodManager:
 
     def get_pod(self, pod_name: str) -> Optional[V1Pod]:
         with self.__lock:
-            if pod_name not in self.__pod_cache.keys():
-                return None
+            # if pod_name not in self.__pod_cache.keys():
+            #     return None
+            for key in self.__pod_cache.keys():
+                if pod_name in key:
+                    pod_name = key
 
             return copy.deepcopy(self.__pod_cache.get(pod_name))
 
@@ -88,19 +91,19 @@ class PodManager:
             handlers[event_type](event)
 
     def __add_pod(self, event):
-        pod_name = get_container_name(event)
+        pod_name = get_pod_name(event)
         log.info("Add pod event: %s", pod_name)
         self.__store_pod(event)
 
     def __modify_pod(self, event):
-        pod_name = get_container_name(event)
+        pod_name = get_pod_name(event)
         log.info("Modify pod event: %s", pod_name)
         self.__store_pod(event)
 
     def __store_pod(self, event):
-        self.__pod_cache[get_container_name(event)] = get_pod_object(event)
+        self.__pod_cache[get_pod_name(event)] = get_pod_object(event)
 
     def __delete_pod(self, event):
-        pod_name = get_container_name(event)
+        pod_name = get_pod_name(event)
         log.info("Delete pod event: %s", pod_name)
         self.__pod_cache.pop(pod_name, None)
