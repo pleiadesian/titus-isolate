@@ -46,7 +46,6 @@ class PodManager:
             for key in self.__pod_cache.keys():
                 if key in pod_name:
                     pod_name = key
-
             return copy.deepcopy(self.__pod_cache.get(pod_name))
 
     def get_pods(self) -> List[V1Pod]:

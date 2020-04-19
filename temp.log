@@ -1,0 +1,319 @@
+diff --git a/release/titus-isolate.service b/release/titus-isolate.service
+index 25f464a..ff33893 100644
+--- a/release/titus-isolate.service
++++ b/release/titus-isolate.service
+@@ -7,6 +7,7 @@ Requires=titus-isolate.socket
+ [Service]
+ EnvironmentFile=/run/titus.env
+ Environment=PYTHONPATH=/opt/venvs/titus-isolate/lib/python3.6/site-packages:/usr/lib/python3/dist-packages/
++Environment=KUBERNETES_BACKEND=0
+ ExecStartPre=/bin/systemctl is-active docker
+ ExecStartPre=/bin/systemctl is-active titus-isolate.socket
+ ExecStartPre=/opt/venvs/titus-isolate/bin/pip3 install 'netflix-spectator-pyconf'
+diff --git a/titus_isolate/api/status.py b/titus_isolate/api/status.py
+index e40b3f3..0177fdb 100644
+--- a/titus_isolate/api/status.py
++++ b/titus_isolate/api/status.py
+@@ -11,6 +11,7 @@ from titus_isolate import log
+ from titus_isolate.api.testing import is_testing
+ from titus_isolate.cgroup.file_cgroup_manager import FileCgroupManager
+ from titus_isolate.config.config_manager import ConfigManager
++from titus_isolate.config.env_property_provider import EnvPropertyProvider
+ from titus_isolate.config.constants import RESTART_PROPERTIES, DEFAULT_HEALTH_CHECK_FREQUENCY, \
+     DEFAULT_MAX_TIME_SINCE_LAST_SUCCESSFUL_EVENT, MAX_TIME_SINCE_LAST_SUCCESSFUL_EVENT_KEY, HEALTH_CHECK_FREQUENCY_KEY
+ from titus_isolate.config.restart_property_watcher import RestartPropertyWatcher
+@@ -29,7 +30,7 @@ from titus_isolate.isolate.reconciler import Reconciler
+ from titus_isolate.isolate.utils import get_fallback_allocator
+ from titus_isolate.isolate.workload_manager import WorkloadManager
+ from titus_isolate.metrics.constants import ISOLATE_LATENCY_KEY
+-from titus_isolate.metrics.keystone_event_log_manager import KeystoneEventLogManager
++from titus_isolate.metrics.local_event_log_manager import LocalEventLogManager
+ from titus_isolate.metrics.metrics_manager import MetricsManager, registry
+ from titus_isolate.model.processor.config import get_cpu_from_env
+ from titus_isolate.monitor.workload_monitor_manager import WorkloadMonitorManager
+@@ -39,7 +40,7 @@ from titus_isolate.real_exit_handler import RealExitHandler
+ from titus_isolate.utils import get_config_manager, get_workload_manager, \
+     set_event_log_manager, start_periodic_scheduling, set_cpu_usage_predictor_manager, \
+     set_workload_monitor_manager, set_workload_manager, set_event_manager, is_kubernetes, get_event_manager, \
+-    set_pod_manager
++    set_pod_manager, set_config_manager
+ 
+ app = Flask(__name__)
+ 
+@@ -159,6 +160,7 @@ def init():
+ 
+ 
+ if __name__ != '__main__' and not is_testing():
++    set_config_manager(ConfigManager(EnvPropertyProvider))
+     log.info("Configuring logging...")
+     gunicorn_logger = logging.getLogger('gunicorn.error')
+     app.logger.handlers = gunicorn_logger.handlers
+@@ -176,7 +178,7 @@ if __name__ != '__main__' and not is_testing():
+         set_pod_manager(pod_manager)
+ 
+     log.info("Setting event log manager...")
+-    event_log_manager = KeystoneEventLogManager()
++    event_log_manager = LocalEventLogManager()
+     set_event_log_manager(event_log_manager)
+ 
+     log.info("Watching property changes for restart...")
+@@ -191,7 +193,6 @@ if __name__ != '__main__' and not is_testing():
+ 
+     # Start the cpu usage predictor manager
+     log.info("Setting up the cpu usage predictor manager...")
+-    set_cpu_usage_predictor_manager(ConfigurableCpuUsagePredictorManager())
+ 
+     # Start performance monitoring
+     log.info("Starting performance monitoring...")
+diff --git a/titus_isolate/config/config_manager.py b/titus_isolate/config/config_manager.py
+index 23ce2a5..6e90134 100644
+--- a/titus_isolate/config/config_manager.py
++++ b/titus_isolate/config/config_manager.py
+@@ -23,7 +23,7 @@ class ConfigManager:
+         return int(self.get_str(key, default))
+ 
+     def get_bool(self, key, default=None):
+-        return bool(self.get_str(key, default))
++        return bool(int(self.get_str(key, default)))
+ 
+     @lru_cache(maxsize=None)
+     def get_cached_str(self, key, default=None):
+diff --git a/titus_isolate/config/env_property_provider.py b/titus_isolate/config/env_property_provider.py
+index b60f43c..9fe6885 100644
+--- a/titus_isolate/config/env_property_provider.py
++++ b/titus_isolate/config/env_property_provider.py
+@@ -5,5 +5,6 @@ from titus_isolate.config.property_provider import PropertyProvider
+ 
+ class EnvPropertyProvider(PropertyProvider):
+ 
+-    def get(self, key):
++    @staticmethod
++    def get(key):
+         return os.environ.get(key, None)
+diff --git a/titus_isolate/metrics/local_event_log_manager.py b/titus_isolate/metrics/local_event_log_manager.py
+new file mode 100644
+index 0000000..6d1dea6
+--- /dev/null
++++ b/titus_isolate/metrics/local_event_log_manager.py
+@@ -0,0 +1,52 @@
++import datetime
++import uuid
++from queue import Queue
++from threading import Thread
++
++from titus_isolate import log
++from titus_isolate.metrics.constants import EVENT_LOG_SUCCESS, EVENT_LOG_RETRY, EVENT_LOG_FAILURE
++from titus_isolate.metrics.event_log_manager import EventLogManager
++
++
++class LocalEventLogManager(EventLogManager):
++
++    def __init__(self):
++        self.__set_address()
++        self.__q = Queue()
++
++        self.__reg = None
++        self.__succeeded_msg_count = 0
++        self.__retry_msg_count = 0
++        self.__failed_msg_count = 0
++
++        self.__processing_thread = Thread(target=self.__process_events)
++        self.__processing_thread.start()
++
++    def report_event(self, payload: dict):
++        try:
++            payload['ts'] = str(datetime.datetime.utcnow())
++            event = {
++                "uuid": str(uuid.uuid4()),
++                "payload": payload
++            }
++            self.__q.put_nowait(event)
++        except:
++            self.__failed_msg_count += 1
++            log.exception("Failed to report event for payload: {}".format(payload))
++
++    def set_registry(self, registry, tags):
++        self.__reg = registry
++
++    def report_metrics(self, tags):
++        self.__reg.gauge(EVENT_LOG_SUCCESS, tags).set(self.__succeeded_msg_count)
++        self.__reg.gauge(EVENT_LOG_RETRY, tags).set(self.__retry_msg_count)
++        self.__reg.gauge(EVENT_LOG_FAILURE, tags).set(self.__failed_msg_count)
++
++    def __process_events(self):
++        while True:
++            msg = self.__q.get()
++            log.debug("Sending event log message: {}".format(msg))
++
++    def __set_address(self):
++        self.__address = ''
++        log.info("Set keystone address to: None")
+diff --git a/titus_isolate/metrics/metrics_manager.py b/titus_isolate/metrics/metrics_manager.py
+index 074c892..c4e9ad5 100644
+--- a/titus_isolate/metrics/metrics_manager.py
++++ b/titus_isolate/metrics/metrics_manager.py
+@@ -49,7 +49,7 @@ class MetricsManager:
+             allocator_name = wm.get_allocator_name()
+ 
+         tags[CPU_ALLOCATOR] = allocator_name
+-        tags[CELL] = get_cell_name()
++        # tags[CELL] = get_cell_name()
+ 
+         return tags
+ 
+diff --git a/titus_isolate/model/kubernetes_workload.py b/titus_isolate/model/kubernetes_workload.py
+index 94c92f5..c2e4e5c 100644
+--- a/titus_isolate/model/kubernetes_workload.py
++++ b/titus_isolate/model/kubernetes_workload.py
+@@ -32,15 +32,15 @@ class KubernetesWorkload(Workload):
+     def __init_resources(self, pod: V1Pod):
+         main_container = get_main_container(pod)
+         resource_requests = main_container.resources.requests
+-
+-        self.__cpus = int(parse_kubernetes_value(resource_requests[CPU]))
+-        self.__mem = float(parse_kubernetes_value(resource_requests[MEMORY]))
+-        self.__network = float(parse_kubernetes_value(resource_requests[TITUS_NETWORK]))
+-        if EPHEMERAL_STORAGE in resource_requests.keys():
+-            disk = resource_requests[EPHEMERAL_STORAGE]
+-        else:
+-            disk = resource_requests[TITUS_DISK]
+-        self.__disk = float(parse_kubernetes_value(disk))
++        print(resource_requests)
++        self.__cpus = 1 #int(float(parse_kubernetes_value(resource_requests[CPU])))
++        self.__mem = 0.1 #float(parse_kubernetes_value(resource_requests[MEMORY]))
++        self.__network = 0.1 #float(parse_kubernetes_value(resource_requests[TITUS_NETWORK]))
++        # if EPHEMERAL_STORAGE in resource_requests.keys():
++        #     disk = '0.1' #resource_requests[EPHEMERAL_STORAGE]
++        # else:
++        #     disk = '0.1' #resource_requests[TITUS_DISK]
++        self.__disk = 0.1 #float(parse_kubernetes_value(disk))
+ 
+     def __init_metadata(self, pod: V1Pod):
+         app_name = 'UNKNOWN_APP_NAME'
+@@ -58,21 +58,23 @@ class KubernetesWorkload(Workload):
+             entrypoint = get_entrypoint(job_descriptor)
+ 
+         metadata = pod.metadata
+-        job_type = metadata.annotations[WORKLOAD_JSON_JOB_TYPE_KEY]
+-        owner_email = metadata.annotations[OWNER_EMAIL]
+-        workload_type_str = metadata.annotations.get(CPU_BURSTING)
++        job_type = "none" # metadata.annotations[WORKLOAD_JSON_JOB_TYPE_KEY]
++        owner_email = "wzl574402791@outlook.com" # metadata.annotations[OWNER_EMAIL]
++        workload_type_str = "static" # metadata.annotations.get(CPU_BURSTING)
+         workload_type = STATIC
+         if workload_type_str is not None and str(workload_type_str).lower() == "true":
+             workload_type = BURST
+ 
+         opportunistic_cpus = 0
+-        if WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY in metadata.annotations.keys():
+-            opportunistic_cpus = metadata.annotations.get(WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY)
++        # if WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY in metadata.annotations.keys():
++        #     opportunistic_cpus = "1" # metadata.annotations.get(WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY)
++        opportunistic_cpus = "1"
+ 
+         duration_predictions = []
+-        if WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY in metadata.annotations.keys():
+-            duration_predictions = \
+-                get_duration_predictions(metadata.annotations.get(WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY))
++        # if WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY in metadata.annotations.keys():
++        #     duration_predictions = \
++        #         "1" # get_duration_predictions(metadata.annotations.get(WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY))
++        duration_predictions = get_duration_predictions("0.05")
+ 
+         self.__app_name = app_name
+         self.__image = image
+diff --git a/titus_isolate/model/pod_utils.py b/titus_isolate/model/pod_utils.py
+index 75a21f0..47b9914 100644
+--- a/titus_isolate/model/pod_utils.py
++++ b/titus_isolate/model/pod_utils.py
+@@ -39,7 +39,7 @@ def get_main_container_status(pod: V1Pod) -> Optional[V1ContainerStatus]:
+ 
+ def get_main_container(pod: V1Pod) -> Optional[V1Container]:
+     pod_name = pod.metadata.name
+-    containers = [c for c in pod.spec.containers if c.name == pod_name]
++    containers = [c for c in pod.spec.containers if c.name in pod_name]
+ 
+     if len(containers) == 1:
+         return containers[0]
+diff --git a/titus_isolate/model/processor/config.py b/titus_isolate/model/processor/config.py
+index fdf8f8e..c757a97 100644
+--- a/titus_isolate/model/processor/config.py
++++ b/titus_isolate/model/processor/config.py
+@@ -20,6 +20,9 @@ def get_cpu_from_env():
+     if processor is None:
+         raise EnvironmentError("Unexpected system type: '{}'".format(system))
+ 
++    print(
++        "package count: " + str(processor.get_package_count()) + " cores_per_package:" + str(processor.get_cores_per_package()) +
++        " threads_per_core:" + str(processor.get_threads_per_core()))
+     return get_cpu(processor.get_package_count(), processor.get_cores_per_package(), processor.get_threads_per_core())
+ 
+ 
+@@ -27,6 +30,7 @@ def get_cpu(
+         package_count=DEFAULT_PACKAGE_COUNT,
+         cores_per_package=DEFAULT_CORE_COUNT,
+         threads_per_core=DEFAULT_THREAD_COUNT):
++    print("package count: " + str(package_count) + " cores_per_package:" + str(cores_per_package) + " threads_per_core:" + str(threads_per_core))
+     packages = []
+     for p_i in range(package_count):
+ 
+@@ -36,7 +40,11 @@ def get_cpu(
+                 Core(c_i, __get_threads(p_i, c_i, package_count, cores_per_package, threads_per_core)))
+ 
+         packages.append(Package(p_i, cores))
+-
++    print("-------------")
++    print(Cpu(packages))
++    print(Cpu(packages).get_threads())
++    print(len(Cpu(packages).get_threads()))
++    print("-------------")
+     return Cpu(packages)
+ 
+ 
+diff --git a/titus_isolate/monitor/utils.py b/titus_isolate/monitor/utils.py
+index aee3f19..a59103d 100644
+--- a/titus_isolate/monitor/utils.py
++++ b/titus_isolate/monitor/utils.py
+@@ -37,7 +37,7 @@ RESOURCE_HEADING_MAPPINGS = {
+ 
+ def get_duration_predictions(input_str: str) -> List[DurationPrediction]:
+     try:
+-        # "0.05=0.29953;0.1=0.29953;0.15=0.29953;0.2=0.29953;0.25=0.29953;0.3=0.29953;0.35=0.29953;0.4=0.29953;0.45=0.29953;0.5=0.29953;0.55=0.29953;0.6=0.29953;0.65=0.29953;0.7=0.29953;0.75=0.29953;0.8=0.29953;0.85=0.29953;0.9=0.29953;0.95=0.29953"
++        input_str = "0.05=0.29953;0.1=0.29953;0.15=0.29953;0.2=0.29953;0.25=0.29953;0.3=0.29953;0.35=0.29953;0.4=0.29953;0.45=0.29953;0.5=0.29953;0.55=0.29953;0.6=0.29953;0.65=0.29953;0.7=0.29953;0.75=0.29953;0.8=0.29953;0.85=0.29953;0.9=0.29953;0.95=0.29953"
+         duration_predictions = []
+         pairs = input_str.split(';')
+         for p in pairs:
+diff --git a/titus_isolate/pod/pod_manager.py b/titus_isolate/pod/pod_manager.py
+index fb799ea..f55cd4e 100644
+--- a/titus_isolate/pod/pod_manager.py
++++ b/titus_isolate/pod/pod_manager.py
+@@ -7,6 +7,7 @@ from kubernetes.client import V1Pod, V1ObjectMeta
+ 
+ from titus_isolate import log
+ from titus_isolate.utils import get_config_manager
++from titus_isolate.event.utils import get_container_name
+ 
+ config_file_path = '/run/kubernetes/config'
+ 
+@@ -40,9 +41,11 @@ class PodManager:
+ 
+     def get_pod(self, pod_name: str) -> Optional[V1Pod]:
+         with self.__lock:
+-            if pod_name not in self.__pod_cache.keys():
+-                return None
+-
++            # if pod_name not in self.__pod_cache.keys():
++            #     return None
++            for key in self.__pod_cache.keys():
++                if key in pod_name:
++                    pod_name = key
+             return copy.deepcopy(self.__pod_cache.get(pod_name))
+ 
+     def get_pods(self) -> List[V1Pod]:
+@@ -102,4 +105,4 @@ class PodManager:
+     def __delete_pod(self, event):
+         pod_name = get_pod_name(event)
+         log.info("Delete pod event: %s", pod_name)
+-        self.__pod_cache.pop(pod_name, None)
+\ No newline at end of file
++        self.__pod_cache.pop(pod_name, None)

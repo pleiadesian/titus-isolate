@@ -58,18 +58,24 @@ def get_cgroup_path_from_file(file_path, cgroup_name):
 def get_cpuset_path(container_name):
     file_path = get_info_path(container_name)
     cgroup_path = get_cgroup_path_from_file(file_path, CPUSET)
+    print("get_cpuset_path: file_path: " + file_path + " cgroup_path: " + cgroup_path)
+    cgroup_path = '/abc'
     return "{}/cpuset{}/cpuset.cpus".format(ROOT_CGROUP_PATH, cgroup_path)
 
 
 def get_quota_path(container_name):
     file_path = get_info_path(container_name)
     cgroup_path = get_cgroup_path_from_file(file_path, CPU_CPUACCT)
+    print("get_cpuset_path: file_path: " + file_path + " cgroup_path: " + cgroup_path)
+    cgroup_path = '/abc'
     return "{}/cpu,cpuacct{}/cpu.cfs_quota_us".format(ROOT_CGROUP_PATH, cgroup_path)
 
 
 def get_shares_path(container_name):
     file_path = get_info_path(container_name)
     cgroup_path = get_cgroup_path_from_file(file_path, CPU_CPUACCT)
+    print("get_cpuset_path: file_path: " + file_path + " cgroup_path: " + cgroup_path)
+    cgroup_path = '/abc'
     return "{}/cpu,cpuacct{}/cpu.shares".format(ROOT_CGROUP_PATH, cgroup_path)
 
 

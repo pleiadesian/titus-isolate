@@ -20,6 +20,9 @@ def get_cpu_from_env():
     if processor is None:
         raise EnvironmentError("Unexpected system type: '{}'".format(system))
 
+    print(
+        "package count: " + str(processor.get_package_count()) + " cores_per_package:" + str(processor.get_cores_per_package()) +
+        " threads_per_core:" + str(processor.get_threads_per_core()))
     return get_cpu(processor.get_package_count(), processor.get_cores_per_package(), processor.get_threads_per_core())
 
 
@@ -27,6 +30,7 @@ def get_cpu(
         package_count=DEFAULT_PACKAGE_COUNT,
         cores_per_package=DEFAULT_CORE_COUNT,
         threads_per_core=DEFAULT_THREAD_COUNT):
+    print("package count: " + str(package_count) + " cores_per_package:" + str(cores_per_package) + " threads_per_core:" + str(threads_per_core))
     packages = []
     for p_i in range(package_count):
 
@@ -36,7 +40,11 @@ def get_cpu(
                 Core(c_i, __get_threads(p_i, c_i, package_count, cores_per_package, threads_per_core)))
 
         packages.append(Package(p_i, cores))
-
+    print("-------------")
+    print(Cpu(packages))
+    print(Cpu(packages).get_threads())
+    print(len(Cpu(packages).get_threads()))
+    print("-------------")
     return Cpu(packages)
 
 

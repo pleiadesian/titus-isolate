@@ -32,15 +32,15 @@ class KubernetesWorkload(Workload):
     def __init_resources(self, pod: V1Pod):
         main_container = get_main_container(pod)
         resource_requests = main_container.resources.requests
-
-        self.__cpus = int(parse_kubernetes_value(resource_requests[CPU]))
-        self.__mem = float(parse_kubernetes_value(resource_requests[MEMORY]))
-        self.__network = float(parse_kubernetes_value(resource_requests[TITUS_NETWORK]))
-        if EPHEMERAL_STORAGE in resource_requests.keys():
-            disk = resource_requests[EPHEMERAL_STORAGE]
-        else:
-            disk = resource_requests[TITUS_DISK]
-        self.__disk = float(parse_kubernetes_value(disk))
+        print(resource_requests)
+        self.__cpus = 1 #int(float(parse_kubernetes_value(resource_requests[CPU])))
+        self.__mem = 0.1 #float(parse_kubernetes_value(resource_requests[MEMORY]))
+        self.__network = 0.1 #float(parse_kubernetes_value(resource_requests[TITUS_NETWORK]))
+        # if EPHEMERAL_STORAGE in resource_requests.keys():
+        #     disk = '0.1' #resource_requests[EPHEMERAL_STORAGE]
+        # else:
+        #     disk = '0.1' #resource_requests[TITUS_DISK]
+        self.__disk = 0.1 #float(parse_kubernetes_value(disk))
 
     def __init_metadata(self, pod: V1Pod):
         app_name = 'UNKNOWN_APP_NAME'
@@ -58,21 +58,23 @@ class KubernetesWorkload(Workload):
             entrypoint = get_entrypoint(job_descriptor)
 
         metadata = pod.metadata
-        job_type = metadata.annotations[WORKLOAD_JSON_JOB_TYPE_KEY]
-        owner_email = metadata.annotations[OWNER_EMAIL]
-        workload_type_str = metadata.annotations.get(CPU_BURSTING)
+        job_type = "none" # metadata.annotations[WORKLOAD_JSON_JOB_TYPE_KEY]
+        owner_email = "wzl574402791@outlook.com" # metadata.annotations[OWNER_EMAIL]
+        workload_type_str = "static" # metadata.annotations.get(CPU_BURSTING)
         workload_type = STATIC
         if workload_type_str is not None and str(workload_type_str).lower() == "true":
             workload_type = BURST
 
         opportunistic_cpus = 0
-        if WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY in metadata.annotations.keys():
-            opportunistic_cpus = metadata.annotations.get(WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY)
+        # if WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY in metadata.annotations.keys():
+        #     opportunistic_cpus = "1" # metadata.annotations.get(WORKLOAD_JSON_OPPORTUNISTIC_CPU_KEY)
+        opportunistic_cpus = "1"
 
         duration_predictions = []
-        if WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY in metadata.annotations.keys():
-            duration_predictions = \
-                get_duration_predictions(metadata.annotations.get(WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY))
+        # if WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY in metadata.annotations.keys():
+        #     duration_predictions = \
+        #         "1" # get_duration_predictions(metadata.annotations.get(WORKLOAD_JSON_RUNTIME_PREDICTIONS_KEY))
+        duration_predictions = get_duration_predictions("0.05")
 
         self.__app_name = app_name
         self.__image = image
