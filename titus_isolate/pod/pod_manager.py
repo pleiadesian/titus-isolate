@@ -44,7 +44,7 @@ class PodManager:
             # if pod_name not in self.__pod_cache.keys():
             #     return None
             for key in self.__pod_cache.keys():
-                if pod_name in key:
+                if key in pod_name:
                     pod_name = key
 
             return copy.deepcopy(self.__pod_cache.get(pod_name))

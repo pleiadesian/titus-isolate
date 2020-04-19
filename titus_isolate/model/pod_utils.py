@@ -39,7 +39,9 @@ def get_main_container_status(pod: V1Pod) -> Optional[V1ContainerStatus]:
 
 def get_main_container(pod: V1Pod) -> Optional[V1Container]:
     pod_name = pod.metadata.name
-    containers = [c for c in pod.spec.containers if c.name == pod_name]
+    log.error("get main container by name %s", pod_name)
+    print([c.name for c in pod.spec.containers])
+    containers = [c for c in pod.spec.containers if c.name in pod_name]
 
     if len(containers) == 1:
         return containers[0]
